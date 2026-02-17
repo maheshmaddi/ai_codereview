@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "commands": {
+    "codereview-int-deep": ".opencode/commands/codereview-int-deep.md",
+    "codereview": ".opencode/commands/codereview.md",
+    "pushcomments": ".opencode/commands/pushcomments.md"
+  },
+  "agents": {
+    "codereview-analyzer": ".opencode/agents/codereview-analyzer.md",
+    "codereview-executor": ".opencode/agents/codereview-executor.md",
+    "codereview-publisher": ".opencode/agents/codereview-publisher.md"
+  }
+}
