@@ -1,7 +1,6 @@
 ---
 description: Analyzes project structure for code review documentation
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
 temperature: 0.2
 tools:
   read: true

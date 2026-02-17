@@ -21,5 +21,6 @@
     ".next/"
   ],
   "max_diff_lines": 5000,
-  "severity_threshold": "MEDIUM"
+  "severity_threshold": "MEDIUM",
+  "polling_enabled": true
 }

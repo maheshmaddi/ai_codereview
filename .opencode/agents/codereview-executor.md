@@ -1,7 +1,6 @@
 ---
 description: Executes AI-powered code review against a PR diff
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
 temperature: 0.1
 tools:
   read: true

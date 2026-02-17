@@ -1,20 +1,17 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import './globals.css'
-import { Providers } from '@/components/providers'
-
-const inter = Inter({ subsets: ['latin'] })
+import { AppChrome } from '@/components/app-chrome'
 
 export const metadata: Metadata = {
-  title: 'OpenCode Code Review',
-  description: 'AI-powered centralized code review management',
+  title: 'AI Code Review UI',
+  description: 'Minimal stable UI for centralized code review',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <Providers>{children}</Providers>
+      <body>
+        <AppChrome>{children}</AppChrome>
       </body>
     </html>
   )

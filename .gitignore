@@ -1,1 +1,9 @@
 /.vs
+node_modules/
+dist/
+.next/
+server/.env
+web/.env.local
+*.db
+*.db-journal
+*.db-wal

@@ -15,6 +15,29 @@ This system provides three OpenCode custom commands and a web-based management U
 
 ## Quick Start
 
+### Option A: Without Docker (Recommended for local dev)
+
+```powershell
+# Windows
+.\start.ps1
+
+# Linux / Mac
+chmod +x start.sh && ./start.sh
+```
+
+This single script will:
+1. Check Node.js 18+ is installed
+2. Create `.env` files from examples (if not present)
+3. Install dependencies for server and web
+4. Start the API server on `http://localhost:3001`
+5. Start the Web UI on `http://localhost:3000`
+
+### Option B: With Docker
+
+```bash
+docker compose up
+```
+
 ### 1. Initialize a project
 
 ```bash
@@ -39,7 +62,32 @@ This generates:
 /pushcomments 142
 ```
 
-## GitHub Actions Integration
+## GitHub Integration
+
+### Option A: Polling Mode (No workflow access needed)
+
+If you don't have GitHub Actions workflow access, use **polling mode** with a GitHub Personal Access Token:
+
+1. Set your token in `server/.env`:
+   ```env
+   GITHUB_TOKEN=github_pat_your_token_here
+   GITHUB_POLLING_ENABLED=true
+   GITHUB_POLLING_INTERVAL_SECONDS=60
+   ```
+
+2. Enable polling per-project via the API or Web UI settings
+
+3. The poller checks registered repos every 60s for PRs with the `ai_codereview` label
+
+**Polling API endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/polling/status` | GET | Current poller state |
+| `/api/polling/start` | POST | Start the poller |
+| `/api/polling/stop` | POST | Stop the poller |
+| `/api/polling/trigger` | POST | Trigger an immediate poll |
+
+### Option B: GitHub Actions Workflow
 
 Add the `ai_codereview` label to any PR to trigger automated review:
 
@@ -51,13 +99,11 @@ Required secrets in your GitHub repository:
 - `ANTHROPIC_API_KEY` — Anthropic API key
 - `GITHUB_TOKEN` — Auto-provided by GitHub Actions
 
+### Option C: Webhooks
+
+Configure a GitHub webhook pointing to `POST /webhooks/github` on your server.
+
 ## Web UI
-
-Start the management portal:
-
-```bash
-docker compose up
-```
 
 Navigate to `http://localhost:3000` and sign in with your Azure AD account.
 
@@ -66,7 +112,7 @@ Navigate to `http://localhost:3000` and sign in with your Azure AD account.
 - **Dashboard** — All registered projects with status badges
 - **Project Explorer** — Module tree with inline markdown editor (Monaco + live preview)
 - **Review History** — Timeline of all PR reviews with verdicts and links
-- **Settings** — Per-project configuration (model, excluded paths, post-clone scripts)
+- **Settings** — Per-project configuration (model, excluded paths, polling toggle)
 
 ## Directory Structure
 
@@ -95,10 +141,20 @@ Navigate to `http://localhost:3000` and sign in with your Azure AD account.
 ├── server/                        # Express API server
 │   └── src/
 │       ├── routes/                # API route handlers
+│       │   ├── projects.ts        # Project CRUD
+│       │   ├── reviews.ts         # Review output
+│       │   ├── sessions.ts        # OpenCode sessions
+│       │   ├── webhook.ts         # GitHub webhook receiver
+│       │   └── polling.ts         # Polling management API
 │       ├── db/                    # SQLite database
-│       └── lib/                   # Store & OpenCode client
+│       └── lib/
+│           ├── store.ts           # File store operations
+│           ├── opencode-client.ts # OpenCode SDK client
+│           └── github-poller.ts   # GitHub polling service
 ├── config/
 │   └── project-settings.example.json
+├── start.ps1                      # Windows startup script
+├── start.sh                       # Linux/Mac startup script
 └── docker-compose.yml
 ```
 
@@ -140,12 +196,13 @@ See `config/project-settings.example.json` for per-project settings reference.
 ## Technology Stack
 
 | Layer | Technology |
-|-------|-----------|
+|-------|-----------| 
 | AI Commands | OpenCode custom commands + agents |
 | Web UI | Next.js 14, TypeScript, Tailwind CSS, Monaco Editor |
 | Authentication | Azure AD via NextAuth.js |
 | Backend API | Express.js, TypeScript |
 | Database | SQLite (better-sqlite3) |
+| GitHub Integration | Octokit REST API (polling + webhooks) |
 | OpenCode Integration | @opencode-ai/sdk |
-| GitHub Integration | Octokit REST API |
-| Deployment | Docker Compose |
+| Deployment | Docker Compose or native (start.ps1 / start.sh) |
+

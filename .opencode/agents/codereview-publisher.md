@@ -1,7 +1,6 @@
 ---
 description: Publishes code review results to GitHub PR via API
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
 temperature: 0.0
 tools:
   read: true

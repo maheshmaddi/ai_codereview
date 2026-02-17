@@ -1,7 +1,6 @@
 ---
 description: Deep initialization — generates code review docs for entire project
 agent: codereview-analyzer
-model: anthropic/claude-sonnet-4-20250514
 subtask: false
 ---
 

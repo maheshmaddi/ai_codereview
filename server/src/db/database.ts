@@ -37,6 +37,8 @@ export function initDatabase(): void {
       max_diff_lines INTEGER NOT NULL DEFAULT 5000,
       severity_threshold TEXT NOT NULL DEFAULT 'MEDIUM',
       github_token_ref TEXT,
+      polling_enabled INTEGER NOT NULL DEFAULT 0,
+      last_polled_at TEXT,
       store_path TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))

@@ -1,7 +1,6 @@
 ---
 description: Execute AI code review on a PR diff
 agent: codereview-executor
-model: anthropic/claude-sonnet-4-20250514
 ---
 
 Execute a code review for PR #$ARGUMENTS on this repository.

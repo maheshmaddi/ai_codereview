@@ -11,6 +11,13 @@ export const STORE_ROOT = path.join(os.homedir(), '.codereview-store')
 export const PROJECTS_DIR = path.join(STORE_ROOT, 'projects')
 export const REVIEWS_DIR = path.join(STORE_ROOT, 'reviews')
 
+export type DiscoveredProject = {
+  projectId: string
+  displayName: string
+  gitRemote: string
+  storePath: string
+}
+
 /** Parse git remote URL into a file system path segment */
 export function remoteToStorePath(gitRemote: string): string {
   // https://github.com/org/project.git → github.com/org/project
@@ -108,4 +115,54 @@ export function writeSettings(projectId: string, settings: Record<string, unknow
   const storeDir = getProjectStoreDir(projectId)
   fs.mkdirSync(storeDir, { recursive: true })
   fs.writeFileSync(path.join(storeDir, 'settings.json'), JSON.stringify(settings, null, 2))
+}
+
+/**
+ * Discover projects from the centralized store.
+ * A project is considered valid when codereview_index.json exists.
+ */
+export function discoverProjectsFromStore(): DiscoveredProject[] {
+  if (!fs.existsSync(PROJECTS_DIR)) return []
+
+  const discovered: DiscoveredProject[] = []
+
+  function walk(dir: string): void {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+      if (!entry.isDirectory()) continue
+
+      const indexPath = path.join(fullPath, 'codereview_index.json')
+      if (fs.existsSync(indexPath)) {
+        try {
+          const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8')) as {
+            project?: string
+            git_remote?: string
+          }
+
+          const relativePath = path.relative(PROJECTS_DIR, fullPath)
+          const projectId = relativePath.split(path.sep).join('/')
+          const fallbackName = projectId.split('/').pop() ?? projectId
+          const displayName = (index.project?.trim() || fallbackName).trim()
+          const gitRemote = (index.git_remote?.trim() || `https://${projectId}.git`).trim()
+
+          discovered.push({
+            projectId,
+            displayName,
+            gitRemote,
+            storePath: fullPath,
+          })
+        } catch {
+          // Ignore invalid index files and continue scanning.
+        }
+        continue
+      }
+
+      walk(fullPath)
+    }
+  }
+
+  walk(PROJECTS_DIR)
+  return discovered
 }

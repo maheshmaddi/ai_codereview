@@ -9,6 +9,7 @@ const OPENCODE_BASE_URL = process.env.OPENCODE_SERVER_URL ?? 'http://localhost:4
 export function getOpencodeClient() {
   return createOpencodeClient({
     baseUrl: OPENCODE_BASE_URL,
+    responseStyle: 'data',
     throwOnError: true,
   })
 }
@@ -24,11 +25,14 @@ export async function runCommand(
   const client = getOpencodeClient()
 
   // Create a new session
-  const sessionResponse = await client.session.create({
-    body: { title: `codereview: ${command}` },
-  })
+  const sessionResp = await client.session.create({
+    body: {
+      title: `codereview: ${command}`,
+    },
+  }) as unknown as { data?: { id?: string }; id?: string }
 
-  const session = sessionResponse.data
+  const session = sessionResp?.data ?? sessionResp
+
   if (!session?.id) {
     throw new Error('Failed to create OpenCode session')
   }
@@ -36,7 +40,8 @@ export async function runCommand(
   // Send the command prompt
   const prompt = args ? `/${command} ${args}` : `/${command}`
 
-  // Fire the prompt asynchronously (don't block waiting for completion)
+  // Fire the prompt asynchronously (don't block waiting for completion).
+  // Slash-commands are sent as regular prompt text (eg. "/codereview 2 org/repo").
   void client.session.prompt({
     path: { id: session.id },
     body: {
@@ -57,29 +62,26 @@ export async function getSessionStatus(sessionId: string): Promise<{
   const client = getOpencodeClient()
 
   try {
-    const messages = await client.session.messages({
+    const messagesResp = await client.session.messages({
       path: { id: sessionId },
-    })
+    }) as unknown as { data?: Array<{ info?: { role?: string } }> } | Array<{ info?: { role?: string } }>
 
-    const allMessages = messages.data ?? []
+    const allMessages = Array.isArray(messagesResp)
+      ? messagesResp
+      : (messagesResp?.data ?? [])
+
     if (allMessages.length === 0) {
       return { status: 'running', progress: 'Initializing...' }
     }
 
-    const lastMessage = allMessages[allMessages.length - 1]
-    const info = lastMessage?.info
+    const lastMessage = allMessages[allMessages.length - 1]?.info
 
-    // Check if session is still running (heuristic: no assistant message yet)
-    if (info?.role === 'assistant' && info?.status === 'completed') {
+    if (lastMessage?.role === 'assistant') {
       return { status: 'completed' }
     }
 
-    if (info?.status === 'error') {
-      return { status: 'error', progress: 'Command failed. Check server logs.' }
-    }
-
     return { status: 'running', progress: 'Processing...' }
-  } catch {
-    return { status: 'error', progress: 'Failed to connect to OpenCode server' }
+  } catch (e) {
+    return { status: 'error', progress: `Failed to connect to OpenCode server: ${(e as Error).message}` }
   }
 }

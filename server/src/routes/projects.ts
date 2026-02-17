@@ -8,6 +8,8 @@ import {
   readSettings,
   writeSettings,
   getProjectStoreDir,
+  discoverProjectsFromStore,
+  REVIEWS_DIR,
 } from '../lib/store.js'
 import { runCommand } from '../lib/opencode-client.js'
 import fs from 'fs'
@@ -15,8 +17,32 @@ import path from 'path'
 
 export const projectsRouter = Router()
 
+function syncProjectsFromStore(): { discovered: number; upserted: number } {
+  const db = getDb()
+  const discovered = discoverProjectsFromStore()
+  let upserted = 0
+
+  const upsertStmt = db.prepare(
+    `INSERT INTO projects (id, display_name, git_remote, store_path)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       display_name = excluded.display_name,
+       git_remote = excluded.git_remote,
+       store_path = excluded.store_path,
+       updated_at = datetime('now')`
+  )
+
+  for (const project of discovered) {
+    upsertStmt.run(project.projectId, project.displayName, project.gitRemote, project.storePath)
+    upserted += 1
+  }
+
+  return { discovered: discovered.length, upserted }
+}
+
 // GET /api/projects — list all projects with summary info
 projectsRouter.get('/', (_req, res) => {
+  syncProjectsFromStore()
   const db = getDb()
   const projects = db
     .prepare(
@@ -29,13 +55,13 @@ projectsRouter.get('/', (_req, res) => {
        ORDER BY p.display_name`
     )
     .all() as Array<{
-    id: string
-    display_name: string
-    git_remote: string
-    updated_at: string
-    review_count: number
-    last_review_date: string | null
-  }>
+      id: string
+      display_name: string
+      git_remote: string
+      updated_at: string
+      review_count: number
+      last_review_date: string | null
+    }>
 
   const summaries = projects.map((p) => {
     const index = readIndex(p.id)
@@ -66,6 +92,15 @@ projectsRouter.get('/', (_req, res) => {
   })
 
   res.json(summaries)
+})
+
+// POST /api/projects/refresh — discover and sync projects from filesystem store
+projectsRouter.post('/refresh', (_req, res) => {
+  const result = syncProjectsFromStore()
+  res.json({
+    success: true,
+    ...result,
+  })
 })
 
 // GET /api/projects/:projectId/index
@@ -104,6 +139,8 @@ projectsRouter.get('/:projectId/settings', (req, res) => {
     excluded_paths: JSON.parse(project.excluded_paths as string),
     max_diff_lines: project.max_diff_lines,
     severity_threshold: project.severity_threshold,
+    polling_enabled: Boolean(project.polling_enabled),
+    last_polled_at: project.last_polled_at,
     ...fileSettings,
   })
 })
@@ -120,6 +157,7 @@ const SettingsSchema = z.object({
   max_diff_lines: z.number().int().positive().optional(),
   severity_threshold: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   github_token_ref: z.string().optional(),
+  polling_enabled: z.boolean().optional(),
 })
 
 projectsRouter.patch('/:projectId/settings', (req, res) => {
@@ -146,6 +184,7 @@ projectsRouter.patch('/:projectId/settings', (req, res) => {
   if (data.max_diff_lines !== undefined) { fields.push('max_diff_lines = ?'); values.push(data.max_diff_lines) }
   if (data.severity_threshold !== undefined) { fields.push('severity_threshold = ?'); values.push(data.severity_threshold) }
   if (data.github_token_ref !== undefined) { fields.push('github_token_ref = ?'); values.push(data.github_token_ref) }
+  if (data.polling_enabled !== undefined) { fields.push('polling_enabled = ?'); values.push(data.polling_enabled ? 1 : 0) }
 
   if (fields.length === 0) {
     return res.status(400).json({ error: 'No fields to update' })
@@ -264,5 +303,48 @@ projectsRouter.post('/:projectId/initialize', async (req, res) => {
     res.json({ session_id: sessionId, message: 'Initialization started' })
   } catch (e) {
     res.status(500).json({ error: (e as Error).message })
+  }
+})
+
+// DELETE /api/projects/:projectId — delete project and clear centralized store files
+projectsRouter.delete('/:projectId', (req, res) => {
+  const projectId = decodeURIComponent(req.params.projectId)
+  const db = getDb()
+
+  const project = db
+    .prepare('SELECT id, store_path FROM projects WHERE id = ?')
+    .get(projectId) as { id: string; store_path: string } | undefined
+
+  if (!project) {
+    return res.status(404).json({ error: 'Project not found' })
+  }
+
+  // Capture review directories before cascading delete removes rows.
+  const reviewDirs = db
+    .prepare('SELECT review_dir FROM reviews WHERE project_id = ?')
+    .all(projectId) as Array<{ review_dir: string }>
+
+  const projectStoreDir =
+    typeof project.store_path === 'string' && project.store_path.trim()
+      ? project.store_path
+      : getProjectStoreDir(projectId)
+
+  try {
+    if (fs.existsSync(projectStoreDir)) {
+      fs.rmSync(projectStoreDir, { recursive: true, force: true })
+    }
+
+    for (const row of reviewDirs) {
+      const reviewPath = path.join(REVIEWS_DIR, row.review_dir)
+      if (fs.existsSync(reviewPath)) {
+        fs.rmSync(reviewPath, { recursive: true, force: true })
+      }
+    }
+
+    db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
+
+    return res.json({ success: true, project_id: projectId })
+  } catch (e) {
+    return res.status(500).json({ error: (e as Error).message })
   }
 })

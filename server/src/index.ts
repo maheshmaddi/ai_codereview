@@ -6,6 +6,8 @@ import { projectsRouter } from './routes/projects.js'
 import { reviewsRouter } from './routes/reviews.js'
 import { sessionsRouter } from './routes/sessions.js'
 import { webhookRouter } from './routes/webhook.js'
+import { pollingRouter } from './routes/polling.js'
+import { getPoller } from './lib/github-poller.js'
 import { initDatabase } from './db/database.js'
 
 const app = express()
@@ -31,6 +33,7 @@ app.use('/api/projects', projectsRouter)
 app.use('/api/reviews', reviewsRouter)
 app.use('/api/sessions', sessionsRouter)
 app.use('/webhooks', webhookRouter)
+app.use('/api/polling', pollingRouter)
 
 // Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -43,6 +46,17 @@ initDatabase()
 
 app.listen(PORT, () => {
   console.log(`OpenCode Code Review server running on port ${PORT}`)
+
+  // Auto-start GitHub poller if enabled
+  if (process.env.GITHUB_POLLING_ENABLED === 'true') {
+    try {
+      const poller = getPoller()
+      poller.start()
+      console.log('GitHub polling mode enabled')
+    } catch (err) {
+      console.error('Failed to start GitHub poller:', err)
+    }
+  }
 })
 
 export default app
