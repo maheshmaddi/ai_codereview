@@ -1,0 +1,25 @@
+{
+  "project_id": "github.com/your-org/your-project",
+  "display_name": "Your Project Name",
+  "git_remote": "https://github.com/your-org/your-project.git",
+  "github_token_ref": "vault://secrets/github/org-pat",
+  "main_branch": "main",
+  "auto_review_enabled": true,
+  "review_trigger_label": "ai_codereview",
+  "post_clone_scripts": [
+    "npm install",
+    "npm run build",
+    "npm run lint:setup"
+  ],
+  "review_model": "anthropic/claude-sonnet-4-20250514",
+  "excluded_paths": [
+    "node_modules/",
+    "dist/",
+    ".git/",
+    "*.min.js",
+    "coverage/",
+    ".next/"
+  ],
+  "max_diff_lines": 5000,
+  "severity_threshold": "MEDIUM"
+}

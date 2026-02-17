@@ -1,0 +1,71 @@
+name: opencode-codereview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+jobs:
+  review:
+    name: AI Code Review
+    if: contains(github.event.pull_request.labels.*.name, 'ai_codereview')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install OpenCode
+        run: npm install -g opencode-ai
+
+      - name: Restore centralized review store cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.codereview-store
+          key: codereview-store-${{ github.repository }}-${{ github.sha }}
+          restore-keys: |
+            codereview-store-${{ github.repository }}-
+
+      - name: Initialize review guidelines (if not cached)
+        if: hashFiles('~/.codereview-store/projects/**/*_codereview.md') == ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          opencode run --model anthropic/claude-sonnet-4-20250514 \
+            --prompt "/codereview-int-deep"
+
+      - name: Execute code review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          opencode run --model anthropic/claude-sonnet-4-20250514 \
+            --prompt "/codereview ${{ github.event.pull_request.number }} ${{ github.repository }}"
+
+      - name: Push review comments to PR
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          opencode run --model anthropic/claude-sonnet-4-20250514 \
+            --prompt "/pushcomments ${{ github.event.pull_request.number }}"
+
+      - name: Upload review artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: code-review-${{ github.event.pull_request.number }}
+          path: ~/.codereview-store/reviews/
+          retention-days: 90

@@ -1,0 +1,56 @@
+version: '3.9'
+
+services:
+  # OpenCode server (headless mode)
+  opencode:
+    image: ghcr.io/opencode-ai/opencode:latest
+    command: serve --port 4096 --cors http://server:3001
+    ports:
+      - '4096:4096'
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:-}
+    volumes:
+      - .:/workspace:ro
+      - codereview-store:/root/.codereview-store
+    working_dir: /workspace
+
+  # Backend API server
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - '3001:3001'
+    environment:
+      PORT: 3001
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      OPENCODE_SERVER_URL: http://opencode:4096
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      AZURE_KEY_VAULT_URL: ${AZURE_KEY_VAULT_URL:-}
+    volumes:
+      - codereview-store:/root/.codereview-store
+    depends_on:
+      - opencode
+
+  # Next.js web UI
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    environment:
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      AZURE_AD_CLIENT_ID: ${AZURE_AD_CLIENT_ID}
+      AZURE_AD_CLIENT_SECRET: ${AZURE_AD_CLIENT_SECRET}
+      AZURE_AD_TENANT_ID: ${AZURE_AD_TENANT_ID}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+    depends_on:
+      - server
+
+volumes:
+  codereview-store:
+    driver: local
