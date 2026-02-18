@@ -96,7 +96,6 @@ Add the `ai_codereview` label to any PR to trigger automated review:
 ```
 
 Required secrets in your GitHub repository:
-- `ANTHROPIC_API_KEY` — Anthropic API key
 - `GITHUB_TOKEN` — Auto-provided by GitHub Actions
 
 ### Option C: Webhooks
