@@ -30,6 +30,16 @@ export type ProjectSettings = {
   auto_review_enabled: boolean
 }
 
+export type ModelOption = {
+  id: string
+  name: string
+  provider: string
+}
+
+export type GlobalSettings = {
+  review_model: string
+}
+
 export type ReviewRow = {
   id: string
   pr_number: number
@@ -114,6 +124,21 @@ export function updateProjectSettings(
   payload: Partial<Pick<ProjectSettings, 'display_name' | 'main_branch' | 'review_model' | 'review_trigger_label' | 'severity_threshold' | 'auto_review_enabled'>>
 ) {
   return apiFetch<ProjectSettings>(`/api/projects/${encodeURIComponent(projectId)}/settings`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getAvailableModels() {
+  return apiFetch<ModelOption[]>('/api/settings/models')
+}
+
+export function getGlobalSettings() {
+  return apiFetch<GlobalSettings>('/api/settings')
+}
+
+export function updateGlobalSettings(payload: Partial<GlobalSettings>) {
+  return apiFetch<GlobalSettings>('/api/settings', {
     method: 'PATCH',
     body: JSON.stringify(payload),
   })

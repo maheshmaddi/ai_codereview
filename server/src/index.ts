@@ -7,6 +7,7 @@ import { reviewsRouter } from './routes/reviews.js'
 import { sessionsRouter } from './routes/sessions.js'
 import { webhookRouter } from './routes/webhook.js'
 import { pollingRouter } from './routes/polling.js'
+import { settingsRouter } from './routes/settings.js'
 import { getPoller } from './lib/github-poller.js'
 import { initDatabase } from './db/database.js'
 
@@ -32,6 +33,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/projects', projectsRouter)
 app.use('/api/reviews', reviewsRouter)
 app.use('/api/sessions', sessionsRouter)
+app.use('/api/settings', settingsRouter)
 app.use('/webhooks', webhookRouter)
 app.use('/api/polling', pollingRouter)
 

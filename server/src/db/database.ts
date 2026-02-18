@@ -82,6 +82,13 @@ export function initDatabase(): void {
       completed_at TEXT
     );
 
+    -- Global settings table
+    CREATE TABLE IF NOT EXISTS global_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_reviews_project_id ON reviews(project_id);
     CREATE INDEX IF NOT EXISTS idx_reviews_reviewed_at ON reviews(reviewed_at DESC);
@@ -91,3 +98,19 @@ export function initDatabase(): void {
 
   console.log(`Database initialized at ${DB_PATH}`)
 }
+
+export function getGlobalSetting(key: string): string | undefined {
+  const db = getDb()
+  const row = db.prepare('SELECT value FROM global_settings WHERE key = ?').get(key) as { value: string } | undefined
+  return row?.value
+}
+
+export function setGlobalSetting(key: string, value: string): void {
+  const db = getDb()
+  db.prepare(`
+    INSERT INTO global_settings (key, value, updated_at) 
+    VALUES (?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')
+  `).run(key, value, value)
+}
+

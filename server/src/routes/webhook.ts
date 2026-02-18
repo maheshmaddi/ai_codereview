@@ -82,7 +82,10 @@ webhookRouter.post('/github', express_raw_body_middleware, async (req, res) => {
 
   // Run review asynchronously
   try {
-    const sessionId = await runCommand('codereview', `${pr.number} ${pr.base.repo.full_name}`)
+    const sessionId = await runCommand(
+      'codereview',
+      `${pr.number} ${pr.base.repo.full_name}`
+    )
 
     db.prepare(
       "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'review', 'running')"

@@ -32,8 +32,99 @@ if ($major -lt 18) {
 }
 Write-Host "[OK] Node.js $nodeVersion" -ForegroundColor Green
 
-# --- Setup .env files ---
+# --- Sync OpenCode Config ---
 $projectRoot = $PSScriptRoot
+Write-Host ""
+Write-Host "Syncing OpenCode configuration..." -ForegroundColor Cyan
+
+function Sync-OpencodeConfig {
+    $globalOpenCodePath = Join-Path $env:USERPROFILE ".opencode"
+    $projectOpenCodePath = Join-Path $projectRoot ".opencode"
+    
+    if (-not (Test-Path $globalOpenCodePath)) {
+        New-Item -ItemType Directory -Path $globalOpenCodePath -Force | Out-Null
+        Write-Host "[CREATED] Global OpenCode directory: $globalOpenCodePath" -ForegroundColor Green
+    }
+    
+    # Copy agents
+    $projectAgents = Join-Path $projectOpenCodePath "agents"
+    $globalAgents = Join-Path $globalOpenCodePath "agents"
+    if (Test-Path $projectAgents) {
+        if (-not (Test-Path $globalAgents)) {
+            New-Item -ItemType Directory -Path $globalAgents -Force | Out-Null
+        }
+        Copy-Item -Path "$projectAgents\*" -Destination $globalAgents -Recurse -Force
+        Write-Host "[OK] Synced OpenCode agents to global config" -ForegroundColor Green
+    }
+    
+    # Copy commands
+    $projectCommands = Join-Path $projectOpenCodePath "commands"
+    $globalCommands = Join-Path $globalOpenCodePath "commands"
+    if (Test-Path $projectCommands) {
+        if (-not (Test-Path $globalCommands)) {
+            New-Item -ItemType Directory -Path $globalCommands -Force | Out-Null
+        }
+        Copy-Item -Path "$projectCommands\*" -Destination $globalCommands -Recurse -Force
+        Write-Host "[OK] Synced OpenCode commands to global config" -ForegroundColor Green
+    }
+    
+    # Copy rules if exists
+    $projectRules = Join-Path $projectOpenCodePath "rules"
+    $globalRules = Join-Path $globalOpenCodePath "rules"
+    if (Test-Path $projectRules) {
+        if (-not (Test-Path $globalRules)) {
+            New-Item -ItemType Directory -Path $globalRules -Force | Out-Null
+        }
+        Copy-Item -Path "$projectRules\*" -Destination $globalRules -Recurse -Force
+        Write-Host "[OK] Synced OpenCode rules to global config" -ForegroundColor Green
+    }
+
+    # Merge project opencode.json permissions into global ~/.config/opencode/opencode.json
+    # This ensures permissions apply even when opencode CLI runs from temp directories
+    $projectOpencodeJson = Join-Path $projectRoot "opencode.json"
+    $globalOpencodeConfigDir = Join-Path $env:USERPROFILE ".config\opencode"
+    $globalOpencodeJson = Join-Path $globalOpencodeConfigDir "opencode.json"
+    
+    if (Test-Path $projectOpencodeJson) {
+        try {
+            $projectConfig = Get-Content $projectOpencodeJson -Raw | ConvertFrom-Json
+            if ($projectConfig.permission) {
+                # Read or create global config
+                if (Test-Path $globalOpencodeJson) {
+                    $globalConfig = Get-Content $globalOpencodeJson -Raw | ConvertFrom-Json
+                } else {
+                    if (-not (Test-Path $globalOpencodeConfigDir)) {
+                        New-Item -ItemType Directory -Path $globalOpencodeConfigDir -Force | Out-Null
+                    }
+                    $globalConfig = [PSCustomObject]@{ '$schema' = 'https://opencode.ai/config.json' }
+                }
+                
+                # Merge permission block
+                if (-not $globalConfig.permission) {
+                    $globalConfig | Add-Member -MemberType NoteProperty -Name 'permission' -Value $projectConfig.permission -Force
+                } else {
+                    # Merge each permission key (external_directory, etc)
+                    $projectConfig.permission.PSObject.Properties | ForEach-Object {
+                        if ($globalConfig.permission.PSObject.Properties.Match($_.Name).Count -eq 0) {
+                             $globalConfig.permission | Add-Member -MemberType NoteProperty -Name $_.Name -Value $_.Value -Force
+                        } else {
+                             # Ideally deep merge, but for now just overwrite top-level keys like "external_directory"
+                             $globalConfig.permission.$($_.Name) = $_.Value
+                        }
+                    }
+                }
+                $globalConfig | ConvertTo-Json -Depth 10 | Set-Content $globalOpencodeJson -Encoding UTF8
+                Write-Host "[OK] Synced OpenCode permissions to global config" -ForegroundColor Green
+            }
+        } catch {
+            Write-Host "[WARN] Failed to sync OpenCode permissions: $_" -ForegroundColor Yellow
+        }
+    }
+}
+
+Sync-OpencodeConfig
+
+# --- Setup .env files ---
 
 # Server .env
 $serverDir = Join-Path $projectRoot "server"
@@ -89,6 +180,23 @@ Write-Host "[OK] Web dependencies installed" -ForegroundColor Green
 Write-Host ""
 Write-Host "Starting services..." -ForegroundColor Cyan
 
+# Start OpenCode server in background (required for AI review features)
+# Resolve the full path first (Start-Job runs in a clean environment without PATH)
+$opencodeCmd = (Get-Command opencode -ErrorAction SilentlyContinue)
+if ($opencodeCmd) { $opencodeCmd = $opencodeCmd.Source }
+if (-not $opencodeCmd) {
+    Write-Host "[WARN] opencode not found in PATH - AI features may not work" -ForegroundColor Yellow
+    $opencodeJob = $null
+} else {
+    $opencodeJob = Start-Job -ScriptBlock {
+        & $using:opencodeCmd serve 2>&1
+    }
+    Write-Host "[STARTED] OpenCode server (port 4096)" -ForegroundColor Green
+    Write-Host "Waiting for OpenCode to initialize (5s)..." -ForegroundColor Cyan
+    Start-Sleep -Seconds 5
+    Write-Host "[OK] Continuing startup" -ForegroundColor Green
+}
+
 # Start server in background
 $serverJob = Start-Job -ScriptBlock {
     Set-Location $using:projectRoot
@@ -109,13 +217,13 @@ Write-Host "[STARTED] Web UI (port 3000)" -ForegroundColor Green
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Services Running:" -ForegroundColor Cyan
+Write-Host "  OpenCode:    http://localhost:4096" -ForegroundColor White
 Write-Host "  API Server:  http://localhost:3001" -ForegroundColor White
 Write-Host "  Web UI:      http://localhost:3000" -ForegroundColor White
 Write-Host "  Health:      http://localhost:3001/health" -ForegroundColor White
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host '[INFO] If using polling mode, ensure GITHUB_POLLING_ENABLED=true in server/.env' -ForegroundColor Yellow
-Write-Host '[INFO] If using OpenCode AI features, ensure opencode is running separately' -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Press Ctrl+C to stop all services..." -ForegroundColor Gray
 Write-Host ""
@@ -124,9 +232,13 @@ Write-Host ""
 try {
     while ($true) {
         # Check if jobs are still running
+        # Check if OpenCode process is still running
+        if ($opencodeJob -and $opencodeJob.State -eq 'Failed') {
+            Write-Host "[ERROR] OpenCode server crashed. Logs:" -ForegroundColor Red
+            Receive-Job -Id $opencodeJob.Id
+        }
         $serverState = (Get-Job -Id $serverJob.Id).State
         $webState = (Get-Job -Id $webJob.Id).State
-
         if ($serverState -eq 'Failed') {
             Write-Host "[ERROR] Server crashed. Logs:" -ForegroundColor Red
             Receive-Job -Id $serverJob.Id
@@ -141,6 +253,11 @@ try {
 } finally {
     Write-Host ""
     Write-Host "Stopping services..." -ForegroundColor Yellow
+    # Stop OpenCode job
+    if ($opencodeJob) {
+        Stop-Job -Id $opencodeJob.Id -ErrorAction SilentlyContinue
+        Remove-Job -Id $opencodeJob.Id -Force -ErrorAction SilentlyContinue
+    }
     Stop-Job -Id $serverJob.Id -ErrorAction SilentlyContinue
     Stop-Job -Id $webJob.Id -ErrorAction SilentlyContinue
     Remove-Job -Id $serverJob.Id -Force -ErrorAction SilentlyContinue

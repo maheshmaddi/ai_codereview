@@ -9,11 +9,15 @@ import {
   writeSettings,
   getProjectStoreDir,
   discoverProjectsFromStore,
+  remoteToStorePath,
   REVIEWS_DIR,
+  PROJECTS_DIR,
 } from '../lib/store.js'
-import { runCommand } from '../lib/opencode-client.js'
+import { runCommand, runCommandInDirWithFallback, pollSessionMessages } from '../lib/opencode-client.js'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
+import { spawn } from 'child_process'
 
 export const projectsRouter = Router()
 
@@ -102,6 +106,136 @@ projectsRouter.post('/refresh', (_req, res) => {
     ...result,
   })
 })
+
+// POST /api/projects/add — clone a git repo and run deep init, streaming SSE status
+projectsRouter.post('/add', async (req, res) => {
+  const { git_url, display_name } = req.body as { git_url?: string; display_name?: string }
+
+  if (!git_url || typeof git_url !== 'string') {
+    return res.status(400).json({ error: 'git_url is required' })
+  }
+
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders()
+
+  const sendEvent = (type: string, data: Record<string, unknown>) => {
+    res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`)
+  }
+
+  const cloneId = `codereview-clone-${Date.now()}`
+  const tempDir = path.join(os.tmpdir(), cloneId)
+  let sessionId: string | undefined
+
+  const cleanup = () => {
+    try {
+      if (fs.existsSync(tempDir)) {
+        fs.rmSync(tempDir, { recursive: true, force: true })
+        console.log(`Cleaned up temp dir: ${tempDir}`)
+      }
+    } catch (e) {
+      console.error('Failed to clean up temp dir:', e)
+    }
+  }
+
+  try {
+    // Step 1: Clone the repository
+    sendEvent('status', { message: `Cloning ${git_url}...` })
+
+    await new Promise<void>((resolve, reject) => {
+      const gitProcess = spawn('git', ['clone', '--progress', git_url, tempDir], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+
+      gitProcess.stdout.on('data', (chunk: Buffer) => {
+        const line = chunk.toString().trim()
+        if (line) sendEvent('status', { message: line })
+      })
+
+      gitProcess.stderr.on('data', (chunk: Buffer) => {
+        // git clone sends progress to stderr
+        const line = chunk.toString().trim()
+        if (line) sendEvent('status', { message: line })
+      })
+
+      gitProcess.on('close', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(`git clone failed with exit code ${code}`))
+      })
+
+      gitProcess.on('error', reject)
+    })
+
+    sendEvent('status', { message: 'Repository cloned successfully.' })
+
+    // Step 2: Run deep init — try SDK, fall back to CLI
+    sendEvent('status', { message: 'Starting deep initialization (this may take several minutes)...' })
+
+    const abortController = new AbortController()
+    req.on('close', () => abortController.abort())
+
+    const runResult = await runCommandInDirWithFallback(
+      'codereview-int-deep',
+      tempDir,
+      (line) => sendEvent('session_event', { message: line }),
+    )
+
+    if (runResult.mode === 'sdk') {
+      // SDK mode: session is running async, poll for messages
+      sendEvent('status', { message: `OpenCode session started: ${runResult.sessionId}` })
+      sendEvent('session_started', { session_id: runResult.sessionId })
+
+      const pollResult = await pollSessionMessages(
+        runResult.sessionId,
+        (text) => sendEvent('session_event', { message: text }),
+        abortController.signal
+      )
+
+      if (pollResult === 'error') {
+        sendEvent('error', { message: 'Deep init encountered an error. Check OpenCode logs.' })
+        cleanup()
+        res.end()
+        return
+      }
+    } else {
+      // CLI mode: process already completed synchronously
+      if (runResult.exitCode !== 0) {
+        sendEvent('error', { message: `opencode CLI exited with code ${runResult.exitCode}` })
+        cleanup()
+        res.end()
+        return
+      }
+      sendEvent('status', { message: 'Deep initialization completed via CLI.' })
+    }
+
+    // Step 3: Sync the project into the store
+    sendEvent('status', { message: 'Syncing project to store...' })
+    const syncResult = syncProjectsFromStore()
+
+    // Derive the project ID from the git URL
+    const projectId = remoteToStorePath(git_url)
+
+    sendEvent('done', {
+      message: 'Project added successfully!',
+      project_id: projectId,
+      session_id: runResult.mode === 'sdk' ? runResult.sessionId : undefined,
+      synced: syncResult.upserted,
+    })
+  } catch (e) {
+    const err = e as Error & { cause?: Error }
+    const msg = err.cause ? `${err.message}: ${err.cause.message}` : err.message
+    console.error('Add project error:', err)
+    sendEvent('error', { message: msg })
+  } finally {
+    cleanup()
+    res.end()
+  }
+})
+
+
 
 // GET /api/projects/:projectId/index
 projectsRouter.get('/:projectId/index', (req, res) => {
