@@ -29,7 +29,7 @@ export function initDatabase(): void {
       display_name TEXT NOT NULL,
       git_remote TEXT NOT NULL UNIQUE,
       main_branch TEXT NOT NULL DEFAULT 'main',
-      auto_review_enabled INTEGER NOT NULL DEFAULT 1,
+      auto_review_enabled INTEGER NOT NULL DEFAULT 0,
       review_trigger_label TEXT NOT NULL DEFAULT 'ai_codereview',
       post_clone_scripts TEXT NOT NULL DEFAULT '[]',
       review_model TEXT NOT NULL DEFAULT 'anthropic/claude-sonnet-4-20250514',

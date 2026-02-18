@@ -143,3 +143,76 @@ export function updateGlobalSettings(payload: Partial<GlobalSettings>) {
     body: JSON.stringify(payload),
   })
 }
+
+// PR Check API
+export type PRInfo = {
+  number: number
+  title: string
+  html_url: string
+  updated_at: string
+  has_trigger_label: boolean
+}
+
+export type PRCheckResult = {
+  total: number
+  with_label: number
+  without_label: number
+  label: string
+  prs: PRInfo[]
+  prs_to_review?: PRInfo[]
+}
+
+export type PRStatus = {
+  pr_number: number
+  pr_title: string
+  status: 'pending_review' | 'already_reviewed'
+  reviewed_at?: string
+}
+
+export type ReviewTriggerResult = {
+  success: boolean
+  session_id: string
+  review_id: string
+  message: string
+}
+
+export function checkProjectPRs(
+  projectId: string,
+  autoTrigger = false
+): Promise<Response> {
+  return fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/check-prs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auto_trigger: autoTrigger }),
+  })
+}
+
+export function triggerPRReview(
+  projectId: string,
+  prNumber: number,
+  prTitle: string,
+  prUrl: string
+): Promise<ReviewTriggerResult> {
+  return apiFetch<ReviewTriggerResult>(
+    `/api/projects/${encodeURIComponent(projectId)}/review-pr`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        pr_number: prNumber,
+        pr_title: prTitle,
+        pr_url: prUrl,
+      }),
+    }
+  )
+}
+
+export function triggerPRReviewsStream(
+  projectId: string,
+  prs: PRInfo[]
+): Promise<Response> {
+  return fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/review-prs-stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prs }),
+  })
+}
