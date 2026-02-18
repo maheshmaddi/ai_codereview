@@ -19,24 +19,19 @@ Identify:
 - All top-level modules/packages (directories containing significant source code)
 - The technology stack (language, frameworks, build tools)
 
-## Step 2: Determine the centralized store path
+## Step 2: Determine store path
 
-The centralized review store is at: `~/.codereview-store/`
+Output files to the current working directory. The caller is responsible for moving them to the centralized store if needed.
 
-Parse the git remote URL to build the storage path:
-- Remote: `https://github.com/org-name/project-name.git`
-- Store path: `~/.codereview-store/projects/github.com/org-name/project-name/`
-
-Create the directory structure:
+Create directory structure in current directory:
 ```
-~/.codereview-store/projects/{host}/{org}/{project}/
-~/.codereview-store/projects/{host}/{org}/{project}/modules/
-~/.codereview-store/reviews/
+./modules/
+./
 ```
 
-## Step 3: Generate the root code review document
+## Step 3: Generate root code review document
 
-Create `{project-name}_codereview.md` in the project store path containing:
+Create `{project-name}_codereview.md` in the current directory containing:
 
 ### Project Overview
 - What the project does and its primary purpose
@@ -87,7 +82,7 @@ Create `{project-name}_codereview.md` in the project store path containing:
 
 ## Step 4: Generate module-level review documents
 
-For EACH module/package identified, create `modules/{module-name}_codereview.md` containing:
+For EACH module/package identified, create `modules/{module-name}_codereview.md` in the current directory containing:
 
 ### Module Purpose
 - Responsibility and boundary of this module
@@ -109,9 +104,9 @@ For EACH module/package identified, create `modules/{module-name}_codereview.md`
 - Test structure for this module
 - Integration points that require mock/stub verification
 
-## Step 5: Generate the index file
+## Step 5: Generate index file
 
-Create `codereview_index.json` in the project store path:
+Create `codereview_index.json` in the current directory:
 
 ```json
 {
@@ -133,10 +128,10 @@ Create `codereview_index.json` in the project store path:
 ## Step 6: Confirm completion
 
 Output a summary confirming:
-- The store path where files were written
+- The current directory where files were written
 - The list of all generated files
 - The total module count
 - Any modules that were skipped and why
 
+**All output files are created in the current working directory.**
 **DO NOT modify any files in the project repository.**
-**All output goes to the centralized store only.**

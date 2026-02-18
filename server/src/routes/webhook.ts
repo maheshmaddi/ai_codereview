@@ -59,7 +59,7 @@ webhookRouter.post('/github', express_raw_body_middleware, async (req, res) => {
   const projectId = remoteToStorePath(gitRemote)
 
   const db = getDb()
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
+  const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
     | { id: string; auto_review_enabled: number; review_trigger_label: string }
     | undefined
 
@@ -87,13 +87,13 @@ webhookRouter.post('/github', express_raw_body_middleware, async (req, res) => {
       `${pr.number} ${pr.base.repo.full_name}`
     )
 
-    db.prepare(
+    await db.prepare(
       "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'review', 'running')"
     ).run(sessionId, project.id)
 
     // Pre-create review history entry (will be updated when complete)
     const reviewId = `${projectId}-pr-${pr.number}-${Date.now()}`
-    db.prepare(
+    await db.prepare(
       `INSERT INTO reviews (id, project_id, pr_number, pr_title, pr_url, repository, reviewed_at, verdict, comment_count, review_dir)
        VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'comment', 0, ?)`
     ).run(reviewId, project.id, pr.number, pr.title, pr.html_url, pr.base.repo.full_name, `pending-${sessionId}`)

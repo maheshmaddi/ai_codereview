@@ -2,7 +2,10 @@
     "$schema": "https://opencode.ai/config.json",
     "permission": {
         "external_directory": {
-            "~/.codereview-store/*": "allow"
+            "~/.codereview-store/**": "allow"
+        },
+        "edit": {
+            "~/.codereview-store/**": "allow"
         }
     }
 }

@@ -21,9 +21,10 @@ import { spawn } from 'child_process'
 
 export const projectsRouter = Router()
 
-function syncProjectsFromStore(): { discovered: number; upserted: number } {
+async function syncProjectsFromStore(): Promise<{ discovered: number; upserted: number }> {
   const db = getDb()
   const discovered = discoverProjectsFromStore()
+  console.log('[syncProjectsFromStore] Discovered projects:', discovered)
   let upserted = 0
 
   const upsertStmt = db.prepare(
@@ -37,18 +38,20 @@ function syncProjectsFromStore(): { discovered: number; upserted: number } {
   )
 
   for (const project of discovered) {
-    upsertStmt.run(project.projectId, project.displayName, project.gitRemote, project.storePath)
+    console.log('[syncProjectsFromStore] Upserting project:', project)
+    await upsertStmt.run(project.projectId, project.displayName, project.gitRemote, project.storePath)
     upserted += 1
   }
 
+  console.log('[syncProjectsFromStore] Upserted:', upserted, 'out of', discovered.length)
   return { discovered: discovered.length, upserted }
 }
 
 // GET /api/projects — list all projects with summary info
-projectsRouter.get('/', (_req, res) => {
-  syncProjectsFromStore()
+projectsRouter.get('/', async (_req, res) => {
+  await syncProjectsFromStore()
   const db = getDb()
-  const projects = db
+  const projects = await db
     .prepare(
       `SELECT p.id, p.display_name, p.git_remote, p.updated_at,
               COUNT(r.id) as review_count,
@@ -66,6 +69,8 @@ projectsRouter.get('/', (_req, res) => {
       review_count: number
       last_review_date: string | null
     }>
+
+  console.log('[GET /api/projects] Returning projects:', projects.map(p => ({ id: p.id, display_name: p.display_name })))
 
   const summaries = projects.map((p) => {
     const index = readIndex(p.id)
@@ -99,8 +104,8 @@ projectsRouter.get('/', (_req, res) => {
 })
 
 // POST /api/projects/refresh — discover and sync projects from filesystem store
-projectsRouter.post('/refresh', (_req, res) => {
-  const result = syncProjectsFromStore()
+projectsRouter.post('/refresh', async (_req, res) => {
+  const result = await syncProjectsFromStore()
   res.json({
     success: true,
     ...result,
@@ -128,16 +133,25 @@ projectsRouter.post('/add', async (req, res) => {
 
   const cloneId = `codereview-clone-${Date.now()}`
   const tempDir = path.join(os.tmpdir(), cloneId)
+  
+  // Log the temp directory for debugging
+  console.log('[ADD PROJECT] os.tmpdir():', os.tmpdir())
+  console.log('[ADD PROJECT] Clone ID:', cloneId)
+  console.log('[ADD PROJECT] Temp dir path:', tempDir)
+  console.log('[ADD PROJECT] Temp dir exists before clone:', fs.existsSync(tempDir))
   let sessionId: string | undefined
 
   const cleanup = () => {
     try {
       if (fs.existsSync(tempDir)) {
-        fs.rmSync(tempDir, { recursive: true, force: true })
-        console.log(`Cleaned up temp dir: ${tempDir}`)
+        console.log('[ADD PROJECT] Temp dir still exists at cleanup - this means it was NOT cleaned up yet')
+        console.log('[ADD PROJECT] Temp dir contents before cleanup:', fs.readdirSync(tempDir))
+        console.log('[ADD PROJECT] NOT cleaning up temp dir - keeping for manual inspection')
+        console.log('[ADD PROJECT] Temp dir location:', tempDir)
+        console.log('[ADD PROJECT] Manually delete when ready: rmdir /s /q', `"${tempDir}"`)
       }
     } catch (e) {
-      console.error('Failed to clean up temp dir:', e)
+      console.error('[ADD PROJECT] Failed to check temp dir:', e)
     }
   }
 
@@ -208,21 +222,100 @@ projectsRouter.post('/add', async (req, res) => {
         res.end()
         return
       }
-      sendEvent('status', { message: 'Deep initialization completed via CLI.' })
+    sendEvent('status', { message: 'Deep initialization completed via CLI.' })
     }
 
-    // Step 3: Sync the project into the store
-    sendEvent('status', { message: 'Syncing project to store...' })
-    const syncResult = syncProjectsFromStore()
+    // Step 3: Copy project files from temp dir to centralized store
+    sendEvent('status', { message: 'Analyzing generated files...' })
 
-    // Derive the project ID from the git URL
     const projectId = remoteToStorePath(git_url)
+    const targetStoreDir = getProjectStoreDir(projectId)
+
+    console.log('[ADD PROJECT] Project ID:', projectId)
+    console.log('[ADD PROJECT] Target store dir:', targetStoreDir)
+    console.log('[ADD PROJECT] Temp dir exists:', fs.existsSync(tempDir))
+
+    // List all files in temp directory recursively
+    const getAllFiles = (dir: string, base = ''): string[] => {
+      const files: string[] = []
+      const entries = fs.readdirSync(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name)
+        const relativePath = path.join(base, entry.name)
+        if (entry.isDirectory()) {
+          files.push(...getAllFiles(fullPath, relativePath))
+        } else {
+          files.push(relativePath)
+        }
+      }
+      return files
+    }
+
+    const allFiles = getAllFiles(tempDir)
+    console.log('[ADD PROJECT] All files in temp dir (recursive):', allFiles)
+
+    // Find codereview-related files
+    const codereviewFiles = allFiles.filter(f =>
+      f.includes('codereview') || f === 'settings.json' || f === 'opencode.json' || f.endsWith('.md')
+    )
+    console.log('[ADD PROJECT] All files in temp dir:', allFiles)
+    console.log('[ADD PROJECT] Codereview-related files found:', codereviewFiles)
+    console.log('[ADD PROJECT] Count of codereview files:', codereviewFiles.length)
+
+    if (codereviewFiles.length === 0) {
+      console.log('[ADD PROJECT] WARNING: No codereview files found in temp directory!')
+      sendEvent('status', { message: 'WARNING: No code review files were generated. Please check OpenCode CLI output.' })
+    }
+
+    // Copy files if any found
+    let copiedCount = 0
+    if (codereviewFiles.length > 0) {
+      sendEvent('status', { message: `Copying ${codereviewFiles.length} files to store...` })
+
+      // Create target directory
+      fs.mkdirSync(targetStoreDir, { recursive: true })
+
+      for (const file of codereviewFiles) {
+        const srcPath = path.join(tempDir, file)
+        const destPath = path.join(targetStoreDir, file)
+        const destDir = path.dirname(destPath)
+
+        console.log(`[ADD PROJECT] Copying ${file} from ${srcPath} to ${destPath}`)
+
+        try {
+          // Create parent directory if needed
+          if (!fs.existsSync(destDir)) {
+            fs.mkdirSync(destDir, { recursive: true })
+          }
+
+          fs.copyFileSync(srcPath, destPath)
+          copiedCount++
+          console.log(`[ADD PROJECT] Successfully copied ${file}`)
+          sendEvent('status', { message: `Copied ${file}` })
+        } catch (err) {
+          console.error(`[ADD PROJECT] Failed to copy ${file}:`, err)
+        }
+      }
+    }
+
+    console.log(`[ADD PROJECT] Total copied: ${copiedCount}/${codereviewFiles.length} files`)
+
+    // List what's in target store dir after copy
+    const targetFiles = getAllFiles(targetStoreDir)
+    console.log('[ADD PROJECT] Files in target store after copy:', targetFiles)
+
+    // Step 4: Sync the project into the database
+    sendEvent('status', { message: 'Syncing project to database...' })
+    const syncResult = await syncProjectsFromStore()
 
     sendEvent('done', {
-      message: 'Project added successfully!',
+      message: `Project processed. ${copiedCount} files copied to store. Check server logs for details.`,
       project_id: projectId,
       session_id: runResult.mode === 'sdk' ? runResult.sessionId : undefined,
       synced: syncResult.upserted,
+      files_copied: copiedCount,
+      temp_dir_kept: true,
+      manual_cleanup_required: true
     })
   } catch (e) {
     const err = e as Error & { cause?: Error }
@@ -239,7 +332,10 @@ projectsRouter.post('/add', async (req, res) => {
 
 // GET /api/projects/:projectId/index
 projectsRouter.get('/:projectId/index', (req, res) => {
-  const index = readIndex(decodeURIComponent(req.params.projectId))
+  const projectId = decodeURIComponent(req.params.projectId)
+  console.log('[GET /:projectId/index] Requested projectId:', projectId)
+  const index = readIndex(projectId)
+  console.log('[GET /:projectId/index] Found index:', !!index)
   if (!index) {
     return res.status(404).json({ error: 'Project index not found. Run /codereview-int-deep first.' })
   }
@@ -247,12 +343,15 @@ projectsRouter.get('/:projectId/index', (req, res) => {
 })
 
 // GET /api/projects/:projectId/settings
-projectsRouter.get('/:projectId/settings', (req, res) => {
+projectsRouter.get('/:projectId/settings', async (req, res) => {
   const projectId = decodeURIComponent(req.params.projectId)
+  console.log('[GET /:projectId/settings] Requested projectId:', projectId)
   const db = getDb()
-  const project = db
+  const project = await db
     .prepare('SELECT * FROM projects WHERE id = ?')
     .get(projectId) as Record<string, unknown> | undefined
+
+  console.log('[GET /:projectId/settings] Found project:', project)
 
   if (!project) {
     return res.status(404).json({ error: 'Project not found' })
@@ -294,7 +393,7 @@ const SettingsSchema = z.object({
   polling_enabled: z.boolean().optional(),
 })
 
-projectsRouter.patch('/:projectId/settings', (req, res) => {
+projectsRouter.patch('/:projectId/settings', async (req, res) => {
   const projectId = decodeURIComponent(req.params.projectId)
   const parsed = SettingsSchema.safeParse(req.body)
 
@@ -327,17 +426,17 @@ projectsRouter.patch('/:projectId/settings', (req, res) => {
   fields.push("updated_at = datetime('now')")
   values.push(projectId)
 
-  db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+  await db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).run(...values)
 
   // Also persist to file settings for use by OpenCode agents
   writeSettings(projectId, { ...(readSettings(projectId) ?? {}), ...data })
 
-  const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId)
+  const updated = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId)
   res.json(updated)
 })
 
 // GET /api/projects/:projectId/document
-projectsRouter.get('/:projectId/document', (req, res) => {
+projectsRouter.get('/:projectId/document', async (req, res) => {
   const projectId = decodeURIComponent(req.params.projectId)
   const moduleName = (req.query.module as string) ?? null
 
@@ -347,7 +446,7 @@ projectsRouter.get('/:projectId/document', (req, res) => {
   }
 
   const db = getDb()
-  const versionRow = db
+  const versionRow = await db
     .prepare(
       'SELECT version, modified_at, modified_by FROM document_versions WHERE project_id = ? AND module_name IS ? ORDER BY version DESC LIMIT 1'
     )
@@ -364,7 +463,7 @@ projectsRouter.get('/:projectId/document', (req, res) => {
 })
 
 // PUT /api/projects/:projectId/document
-projectsRouter.put('/:projectId/document', (req, res) => {
+projectsRouter.put('/:projectId/document', async (req, res) => {
   const projectId = decodeURIComponent(req.params.projectId)
   const { module: moduleName, content } = req.body as { module: string | null; content: string }
 
@@ -377,14 +476,14 @@ projectsRouter.put('/:projectId/document', (req, res) => {
 
     const db = getDb()
     const lastVersion = (
-      db
+      await db
         .prepare(
           'SELECT version FROM document_versions WHERE project_id = ? AND module_name IS ? ORDER BY version DESC LIMIT 1'
         )
         .get(projectId, moduleName ?? null) as { version: number } | undefined
     )?.version ?? 0
 
-    db.prepare(
+    await db.prepare(
       'INSERT INTO document_versions (project_id, module_name, content, version, modified_by) VALUES (?, ?, ?, ?, ?)'
     ).run(projectId, moduleName ?? null, content, lastVersion + 1, 'user')
 
@@ -395,12 +494,12 @@ projectsRouter.put('/:projectId/document', (req, res) => {
 })
 
 // GET /api/projects/:projectId/document/versions
-projectsRouter.get('/:projectId/document/versions', (req, res) => {
+projectsRouter.get('/:projectId/document/versions', async (req, res) => {
   const projectId = decodeURIComponent(req.params.projectId)
   const moduleName = (req.query.module as string) ?? null
 
   const db = getDb()
-  const versions = db
+  const versions = await db
     .prepare(
       'SELECT version, modified_at, modified_by FROM document_versions WHERE project_id = ? AND module_name IS ? ORDER BY version DESC'
     )
@@ -410,10 +509,10 @@ projectsRouter.get('/:projectId/document/versions', (req, res) => {
 })
 
 // GET /api/projects/:projectId/reviews
-projectsRouter.get('/:projectId/reviews', (req, res) => {
+projectsRouter.get('/:projectId/reviews', async (req, res) => {
   const projectId = decodeURIComponent(req.params.projectId)
   const db = getDb()
-  const reviews = db
+  const reviews = await db
     .prepare(
       'SELECT * FROM reviews WHERE project_id = ? ORDER BY reviewed_at DESC'
     )
@@ -430,7 +529,7 @@ projectsRouter.post('/:projectId/initialize', async (req, res) => {
     const sessionId = await runCommand('codereview-int-deep')
 
     const db = getDb()
-    db.prepare(
+    await db.prepare(
       "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'init', 'running')"
     ).run(sessionId, projectId)
 
@@ -441,11 +540,11 @@ projectsRouter.post('/:projectId/initialize', async (req, res) => {
 })
 
 // DELETE /api/projects/:projectId — delete project and clear centralized store files
-projectsRouter.delete('/:projectId', (req, res) => {
+projectsRouter.delete('/:projectId', async (req, res) => {
   const projectId = decodeURIComponent(req.params.projectId)
   const db = getDb()
 
-  const project = db
+  const project = await db
     .prepare('SELECT id, store_path FROM projects WHERE id = ?')
     .get(projectId) as { id: string; store_path: string } | undefined
 
@@ -454,7 +553,7 @@ projectsRouter.delete('/:projectId', (req, res) => {
   }
 
   // Capture review directories before cascading delete removes rows.
-  const reviewDirs = db
+  const reviewDirs = await db
     .prepare('SELECT review_dir FROM reviews WHERE project_id = ?')
     .all(projectId) as Array<{ review_dir: string }>
 
@@ -475,7 +574,7 @@ projectsRouter.delete('/:projectId', (req, res) => {
       }
     }
 
-    db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
+    await db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
 
     return res.json({ success: true, project_id: projectId })
   } catch (e) {

@@ -43,7 +43,7 @@ prCheckRouter.post('/:projectId/check-prs', async (req, res) => {
     // Get project details
     sendEvent('status', { message: 'Fetching project configuration...' })
 
-    const project = db
+    const project = await db
       .prepare('SELECT * FROM projects WHERE id = ?')
       .get(projectId) as {
         id: string
@@ -124,7 +124,7 @@ prCheckRouter.post('/:projectId/check-prs', async (req, res) => {
     const prsToReview: PRInfo[] = []
 
     for (const pr of prsWithLabel) {
-      const existingReview = db
+      const existingReview = await db
         .prepare(
           'SELECT id, reviewed_at FROM reviews WHERE project_id = ? AND pr_number = ? ORDER BY reviewed_at DESC LIMIT 1'
         )
@@ -206,7 +206,7 @@ prCheckRouter.post('/:projectId/review-prs-stream', async (req, res) => {
   const db = getDb()
 
   try {
-    const project = db
+    const project = await db
       .prepare('SELECT git_remote FROM projects WHERE id = ?')
       .get(projectId) as { git_remote: string } | undefined
 
@@ -242,7 +242,7 @@ prCheckRouter.post('/:projectId/review-pr', async (req, res) => {
   const db = getDb()
 
   try {
-    const project = db
+    const project = await db
       .prepare('SELECT git_remote FROM projects WHERE id = ?')
       .get(projectId) as { git_remote: string } | undefined
 
@@ -260,12 +260,12 @@ prCheckRouter.post('/:projectId/review-pr', async (req, res) => {
     const sessionId = `cli-${Date.now()}`
     
     // Insert session record
-    db.prepare(
+    await db.prepare(
       "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'review', 'running')"
     ).run(sessionId, projectId)
 
     // Insert review record
-    db.prepare(
+    await db.prepare(
       `INSERT INTO reviews (id, project_id, pr_number, pr_title, pr_url, repository, reviewed_at, verdict, comment_count, review_dir)
        VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'comment', 0, ?)`
     ).run(
@@ -320,12 +320,12 @@ async function triggerReviewsCLI(
       const sessionId = `cli-${Date.now()}-${pr.number}`
 
       // Insert session record
-      db.prepare(
+      await db.prepare(
         "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'review', 'running')"
       ).run(sessionId, projectId)
 
       // Insert review record
-      db.prepare(
+      await db.prepare(
         `INSERT INTO reviews (id, project_id, pr_number, pr_title, pr_url, repository, reviewed_at, verdict, comment_count, review_dir)
          VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'comment', 0, ?)`
       ).run(
@@ -350,7 +350,7 @@ async function triggerReviewsCLI(
 
       if (exitCode === 0) {
         triggeredCount++
-        db.prepare("UPDATE sessions SET status = 'completed' WHERE id = ?").run(sessionId)
+        await db.prepare("UPDATE sessions SET status = 'completed' WHERE id = ?").run(sessionId)
         sendEvent('review_triggered', {
           pr_number: pr.number,
           pr_title: pr.title,
@@ -358,7 +358,7 @@ async function triggerReviewsCLI(
           review_id: reviewId,
         })
       } else {
-        db.prepare("UPDATE sessions SET status = 'error' WHERE id = ?").run(sessionId)
+        await db.prepare("UPDATE sessions SET status = 'error' WHERE id = ?").run(sessionId)
         sendEvent('review_error', {
           pr_number: pr.number,
           pr_title: pr.title,
@@ -409,7 +409,7 @@ async function runReviewCLIWithStream(
   }
 
   try {
-    // Step 1: Clone the repository
+    // Step 1: Clone repository
     sendEvent('status', { message: `[PR #${prNumber}] Cloning ${gitRemote}...` })
 
     await new Promise<void>((resolve, reject) => {
@@ -525,7 +525,7 @@ async function runReviewCLIBackground(
   try {
     console.log(`[Review CLI] Starting review for PR #${prNumber} in ${tempDir}`)
 
-    // Step 1: Clone the repository
+    // Step 1: Clone repository
     await new Promise<void>((resolve, reject) => {
       const gitProcess = spawn('git', ['clone', '--depth', '1', gitRemote, tempDir], {
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -584,7 +584,7 @@ async function runReviewCLIBackground(
 
     // Update session status
     if (exitCode === 0) {
-      db.prepare("UPDATE sessions SET status = 'completed' WHERE id = ?").run(sessionId)
+      await db.prepare("UPDATE sessions SET status = 'completed' WHERE id = ?").run(sessionId)
       console.log(`[Review CLI] Review completed successfully for PR #${prNumber}`)
       
       // Step 3: Remove the trigger label
@@ -596,21 +596,21 @@ async function runReviewCLIBackground(
         console.error(`[Review CLI] Failed to remove label for PR #${prNumber}:`, labelErr)
       }
     } else {
-      db.prepare("UPDATE sessions SET status = 'error' WHERE id = ?").run(sessionId)
+      await db.prepare("UPDATE sessions SET status = 'error' WHERE id = ?").run(sessionId)
       console.error(`[Review CLI] Review failed for PR #${prNumber} with exit code ${exitCode}`)
     }
 
     cleanup()
   } catch (err) {
     console.error(`[Review CLI] Error:`, err)
-    db.prepare("UPDATE sessions SET status = 'error' WHERE id = ?").run(sessionId)
+    await db.prepare("UPDATE sessions SET status = 'error' WHERE id = ?").run(sessionId)
     cleanup()
     throw err
   }
 }
 
 /**
- * Remove the trigger label from a PR after successful review
+ * Remove trigger label from a PR after successful review
  */
 async function removeTriggerLabel(
   owner: string,
@@ -620,8 +620,8 @@ async function removeTriggerLabel(
 ): Promise<void> {
   const db = getDb()
   
-  // Get the project's trigger label
-  const project = db
+  // Get project's trigger label
+  const project = await db
     .prepare('SELECT review_trigger_label FROM projects WHERE id = ?')
     .get(projectId) as { review_trigger_label: string } | undefined
 

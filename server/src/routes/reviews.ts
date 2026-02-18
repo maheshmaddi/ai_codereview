@@ -5,9 +5,9 @@ import { readReviewOutput } from '../lib/store.js'
 export const reviewsRouter = Router()
 
 // GET /api/reviews/:reviewId — get full review output
-reviewsRouter.get('/:reviewId', (req, res) => {
+reviewsRouter.get('/:reviewId', async (req, res) => {
   const db = getDb()
-  const review = db
+  const review = await db
     .prepare('SELECT * FROM reviews WHERE id = ?')
     .get(req.params.reviewId) as { review_dir: string } | undefined
 

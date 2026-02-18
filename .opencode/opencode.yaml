@@ -1,0 +1,6 @@
+description: Deep initialization — generates code review docs for entire project
+agent: codereview-analyzer
+subtask: false
+---
+
+Analyze the complete project structure of this repository and generate comprehensive code review documentation.

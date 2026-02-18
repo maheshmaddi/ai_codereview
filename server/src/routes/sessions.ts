@@ -13,7 +13,7 @@ sessionsRouter.get('/:sessionId/status', async (req, res) => {
 
   // Persist to DB if completed or errored
   if (liveStatus.status !== 'running') {
-    db.prepare(
+    await db.prepare(
       "UPDATE sessions SET status = ?, completed_at = datetime('now') WHERE id = ?"
     ).run(liveStatus.status, req.params.sessionId)
   }
