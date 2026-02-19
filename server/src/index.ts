@@ -46,7 +46,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 })
 
 // Initialize DB and start server
-initDatabase()
+await initDatabase()
 
 app.listen(PORT, () => {
   console.log(`OpenCode Code Review server running on port ${PORT}`)

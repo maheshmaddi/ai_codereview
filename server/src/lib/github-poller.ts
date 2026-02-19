@@ -1,6 +1,6 @@
 /**
  * GitHub Polling Service — Alternative to webhooks for environments
- * without workflow access. Polls GitHub API for PRs with the trigger label.
+ * without workflow access. Polls GitHub API for PRs with trigger label.
  */
 
 import { Octokit } from 'octokit'
@@ -93,7 +93,7 @@ export class GitHubPoller {
 
   /**
    * Single poll cycle: checks all polling-enabled projects for new PRs
-   * with the configured trigger label.
+   * with configured trigger label.
    */
   async pollOnce(): Promise<{ projectsChecked: number; reviewsTriggered: number }> {
     const db = getDb()
@@ -101,7 +101,7 @@ export class GitHubPoller {
     let reviewsTriggered = 0
 
     try {
-      const projects = db
+      const projects = await db
         .prepare(
           'SELECT * FROM projects WHERE auto_review_enabled = 1 AND polling_enabled = 1'
         )
@@ -114,7 +114,7 @@ export class GitHubPoller {
           projectsChecked++
 
           // Update last_polled_at
-          db.prepare("UPDATE projects SET last_polled_at = datetime('now') WHERE id = ?").run(
+          await db.prepare("UPDATE projects SET last_polled_at = datetime('now') WHERE id = ?").run(
             project.id
           )
         } catch (err) {
@@ -134,7 +134,7 @@ export class GitHubPoller {
   }
 
   /**
-   * Poll a single project for PRs with the trigger label.
+   * Poll a single project for PRs with trigger label.
    */
   private async pollProject(project: ProjectRow): Promise<number> {
     const db = getDb()
@@ -147,7 +147,7 @@ export class GitHubPoller {
       return 0
     }
 
-    // Fetch open PRs with the trigger label
+    // Fetch open PRs with trigger label
     const { data: pullRequests } = await this.octokit.rest.pulls.list({
       owner,
       repo,
@@ -162,7 +162,7 @@ export class GitHubPoller {
       if (!hasLabel) continue
 
       // Check if we already reviewed this PR's current head
-      const existingReview = db
+      const existingReview = await db
         .prepare(
           'SELECT id FROM reviews WHERE project_id = ? AND pr_number = ? ORDER BY created_at DESC LIMIT 1'
         )
@@ -190,12 +190,12 @@ export class GitHubPoller {
       try {
         const sessionId = await runCommand('codereview', `${pr.number} ${owner}/${repo}`)
 
-        db.prepare(
+        await db.prepare(
           "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'review', 'running')"
         ).run(sessionId, project.id)
 
         const reviewId = `${project.id}-pr-${pr.number}-${Date.now()}`
-        db.prepare(
+        await db.prepare(
           `INSERT INTO reviews (id, project_id, pr_number, pr_title, pr_url, repository, reviewed_at, verdict, comment_count, review_dir)
            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'comment', 0, ?)`
         ).run(

@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3'
+import sqlite3 from 'sqlite3'
 import path from 'path'
 import os from 'os'
 import fs from 'fs'
@@ -6,23 +6,116 @@ import fs from 'fs'
 const DB_DIR = path.join(os.homedir(), '.codereview-store')
 const DB_PATH = path.join(DB_DIR, 'codereview.db')
 
-let db: Database.Database | null = null
+let db: sqlite3.Database | null = null
 
-export function getDb(): Database.Database {
-  if (!db) {
-    throw new Error('Database not initialized. Call initDatabase() first.')
+class PreparedStatement {
+  private sql: string
+  private database: sqlite3.Database
+
+  constructor(database: sqlite3.Database, sql: string) {
+    this.database = database
+    this.sql = sql
   }
-  return db
+
+  async all(...params: any[]): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      this.database.all(this.sql, params, (err, rows) => {
+        if (err) reject(err)
+        else resolve(rows)
+      })
+    })
+  }
+
+  async get(...params: any[]): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.database.get(this.sql, params, (err, row) => {
+        if (err) reject(err)
+        else resolve(row)
+      })
+    })
+  }
+
+  async run(...params: any[]): Promise<{ lastID: number; changes: number }> {
+    return new Promise((resolve, reject) => {
+      this.database.run(this.sql, params, function(err) {
+        if (err) reject(err)
+        else resolve({ lastID: this.lastID, changes: this.changes })
+      })
+    })
+  }
 }
 
-export function initDatabase(): void {
+class DatabaseWrapper {
+  private database: sqlite3.Database
+
+  constructor(database: sqlite3.Database) {
+    this.database = database
+  }
+
+  prepare(sql: string): PreparedStatement {
+    return new PreparedStatement(this.database, sql)
+  }
+
+  async exec(sql: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.database.exec(sql, (err) => {
+        if (err) reject(err)
+        else resolve()
+      })
+    })
+  }
+
+  async run(sql: string, ...params: any[]): Promise<{ lastID: number; changes: number }> {
+    return new Promise((resolve, reject) => {
+      this.database.run(sql, params, function(err) {
+        if (err) reject(err)
+        else resolve({ lastID: this.lastID, changes: this.changes })
+      })
+    })
+  }
+
+  async get(sql: string, ...params: any[]): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.database.get(sql, params, (err, row) => {
+        if (err) reject(err)
+        else resolve(row)
+      })
+    })
+  }
+
+  async all(sql: string, ...params: any[]): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      this.database.all(sql, params, (err, rows) => {
+        if (err) reject(err)
+        else resolve(rows)
+      })
+    })
+  }
+
+  async pragma(pragma: string): Promise<{ lastID: number; changes: number }> {
+    return this.run(`PRAGMA ${pragma}`)
+  }
+}
+
+let dbWrapper: DatabaseWrapper | null = null
+
+export function getDb(): DatabaseWrapper {
+  if (!dbWrapper) {
+    throw new Error('Database not initialized. Call initDatabase() first.')
+  }
+  return dbWrapper
+}
+
+export async function initDatabase(): Promise<void> {
   fs.mkdirSync(DB_DIR, { recursive: true })
 
-  db = new Database(DB_PATH)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
+  db = new sqlite3.Database(DB_PATH)
+  dbWrapper = new DatabaseWrapper(db)
 
-  db.exec(`
+  await dbWrapper.pragma('journal_mode = WAL')
+  await dbWrapper.pragma('foreign_keys = ON')
+
+  await dbWrapper.exec(`
     -- Projects table
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -99,18 +192,17 @@ export function initDatabase(): void {
   console.log(`Database initialized at ${DB_PATH}`)
 }
 
-export function getGlobalSetting(key: string): string | undefined {
-  const db = getDb()
-  const row = db.prepare('SELECT value FROM global_settings WHERE key = ?').get(key) as { value: string } | undefined
+export async function getGlobalSetting(key: string): Promise<string | undefined> {
+  const database = getDb()
+  const row = await database.get('SELECT value FROM global_settings WHERE key = ?', key) as { value: string } | undefined
   return row?.value
 }
 
-export function setGlobalSetting(key: string, value: string): void {
-  const db = getDb()
-  db.prepare(`
+export async function setGlobalSetting(key: string, value: string): Promise<void> {
+  const database = getDb()
+  await database.run(`
     INSERT INTO global_settings (key, value, updated_at) 
     VALUES (?, ?, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')
-  `).run(key, value, value)
+  `, key, value, value)
 }
-

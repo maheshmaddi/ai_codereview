@@ -200,7 +200,7 @@ See `config/project-settings.example.json` for per-project settings reference.
 | Web UI | Next.js 14, TypeScript, Tailwind CSS, Monaco Editor |
 | Authentication | Azure AD via NextAuth.js |
 | Backend API | Express.js, TypeScript |
-| Database | SQLite (better-sqlite3) |
+| Database | SQLite (sqlite3) |
 | GitHub Integration | Octokit REST API (polling + webhooks) |
 | OpenCode Integration | @opencode-ai/sdk |
 | Deployment | Docker Compose or native (start.ps1 / start.sh) |

@@ -5,22 +5,22 @@ import { getAvailableModels } from '../lib/opencode-client.js'
 export const settingsRouter = Router()
 
 // GET /api/settings - get all global settings
-settingsRouter.get('/', (_req, res) => {
-    const reviewModel = getGlobalSetting('review_model') ?? 'anthropic/claude-sonnet-4-20250514'
+settingsRouter.get('/', async (_req, res) => {
+    const reviewModel = (await getGlobalSetting('review_model')) ?? 'anthropic/claude-sonnet-4-20250514'
     res.json({
         review_model: reviewModel
     })
 })
 
 // PATCH /api/settings - update global settings
-settingsRouter.patch('/', (req, res) => {
+settingsRouter.patch('/', async (req, res) => {
     const { review_model } = req.body
 
     if (review_model) {
-        setGlobalSetting('review_model', review_model)
+        await setGlobalSetting('review_model', review_model)
     }
 
-    const updatedModel = getGlobalSetting('review_model')
+    const updatedModel = await getGlobalSetting('review_model')
     res.json({
         review_model: updatedModel
     })
