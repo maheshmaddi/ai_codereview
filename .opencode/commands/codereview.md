@@ -10,10 +10,11 @@ If repository is not provided, detect from: `!`git remote get-url origin``
 
 ## Step 1: Prepare the environment
 
-Get the PR branch name:
-```
-!`gh pr view {pr_number} --json headRefName,baseRefName,title,body --jq '{branch: .headRefName, base: .baseRefName, title: .title}'`
-```
+Parse the $ARGUMENTS to get:
+- pr_number: First argument (e.g., `142`)
+- repository: Second argument (e.g., `org/project-name`)
+
+If repository is not provided, detect from: `!`git remote get-url origin``
 
 Run post-clone setup scripts if a `settings.json` exists in the project store:
 ```
@@ -24,15 +25,16 @@ Run post-clone setup scripts if a `settings.json` exists in the project store:
 
 Fetch the PR branch and compute the diff:
 ```
-!`git fetch origin {pr_branch}`
-!`git diff origin/{base_branch}...origin/{pr_branch} --name-only`
-!`git diff origin/{base_branch}...origin/{pr_branch} --stat`
-!`git diff origin/{base_branch}...origin/{pr_branch}`
+!`git fetch origin pull/{pr_number}/head:pr-{pr_number}`
+!`git checkout pr-{pr_number}`
+!`git diff origin/main...pr-{pr_number} --name-only`
+!`git diff origin/main...pr-{pr_number} --stat`
+!`git diff origin/main...pr-{pr_number}`
 ```
 
 If the diff exceeds 5000 lines, focus on:
 1. Files with the most changes
-2. New files added
+2. Newly added files
 3. Changes to security-critical paths (auth, permissions, data access)
 
 ## Step 3: Load review guidelines
@@ -49,8 +51,7 @@ Load the index to identify relevant modules:
 Read: ~/.codereview-store/projects/{host}/{org}/{project}/codereview_index.json
 ```
 
-For each changed file, match against module paths in the index.
-Load all matched module review files:
+For each changed file, match against the module paths in the index. Load all matched module review files:
 ```
 Read: ~/.codereview-store/projects/{host}/{org}/{project}/modules/{module}_codereview.md
 ```
@@ -107,11 +108,18 @@ Write `review_comments.json`:
 Valid severity values: `HIGH`, `MEDIUM`, `LOW`
 Valid category values: `SECURITY`, `PERFORMANCE`, `BUG`, `CODE_QUALITY`, `TESTING`, `DOCUMENTATION`
 
-## Step 6: Trigger comment posting
+## Step 6: Post review to GitHub
 
-After generating the review output, call:
+After generating the review files, automatically post the review to GitHub using the `post_github_review` tool:
+
 ```
-/pushcomments {pr_number}
+Use the post_github_review tool with the review directory path as argument
 ```
+
+The tool will read `review_comments.json` from the review directory and post the review to GitHub.
+
+If the tool fails (e.g., no GITHUB_TOKEN configured), log the error but do not fail the entire review process.
+
+## Step 7: Output completion
 
 Output the path to the generated review files on completion.

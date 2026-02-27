@@ -4,7 +4,7 @@
  */
 
 import { Octokit } from 'octokit'
-import { getDb } from '../db/database.js'
+import { dbAll, dbGet, dbRun } from '../db/database.js'
 import { runCommand } from './opencode-client.js'
 
 interface ProjectRow {
@@ -96,16 +96,13 @@ export class GitHubPoller {
    * with the configured trigger label.
    */
   async pollOnce(): Promise<{ projectsChecked: number; reviewsTriggered: number }> {
-    const db = getDb()
     let projectsChecked = 0
     let reviewsTriggered = 0
 
     try {
-      const projects = db
-        .prepare(
-          'SELECT * FROM projects WHERE auto_review_enabled = 1 AND polling_enabled = 1'
-        )
-        .all() as ProjectRow[]
+      const projects = await dbAll(
+        'SELECT * FROM projects WHERE auto_review_enabled = 1 AND polling_enabled = 1'
+      ) as ProjectRow[]
 
       for (const project of projects) {
         try {
@@ -114,9 +111,7 @@ export class GitHubPoller {
           projectsChecked++
 
           // Update last_polled_at
-          db.prepare("UPDATE projects SET last_polled_at = datetime('now') WHERE id = ?").run(
-            project.id
-          )
+          await dbRun("UPDATE projects SET last_polled_at = datetime('now') WHERE id = ?", [project.id])
         } catch (err) {
           console.error(`[Poller] Error polling project ${project.id}:`, err)
         }
@@ -137,7 +132,6 @@ export class GitHubPoller {
    * Poll a single project for PRs with the trigger label.
    */
   private async pollProject(project: ProjectRow): Promise<number> {
-    const db = getDb()
     let triggered = 0
 
     // Parse owner/repo from git_remote
@@ -162,11 +156,10 @@ export class GitHubPoller {
       if (!hasLabel) continue
 
       // Check if we already reviewed this PR's current head
-      const existingReview = db
-        .prepare(
-          'SELECT id FROM reviews WHERE project_id = ? AND pr_number = ? ORDER BY created_at DESC LIMIT 1'
-        )
-        .get(project.id, pr.number) as { id: string } | undefined
+      const existingReview = await dbGet(
+        'SELECT id FROM reviews WHERE project_id = ? AND pr_number = ? ORDER BY created_at DESC LIMIT 1',
+        [project.id, pr.number]
+      ) as { id: string } | undefined
 
       // Skip if already reviewed and PR hasn't been updated since
       if (existingReview && project.last_polled_at) {
@@ -190,22 +183,24 @@ export class GitHubPoller {
       try {
         const sessionId = await runCommand('codereview', `${pr.number} ${owner}/${repo}`)
 
-        db.prepare(
-          "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'review', 'running')"
-        ).run(sessionId, project.id)
+        await dbRun(
+          "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'review', 'running')",
+          [sessionId, project.id]
+        )
 
         const reviewId = `${project.id}-pr-${pr.number}-${Date.now()}`
-        db.prepare(
+        await dbRun(
           `INSERT INTO reviews (id, project_id, pr_number, pr_title, pr_url, repository, reviewed_at, verdict, comment_count, review_dir)
-           VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'comment', 0, ?)`
-        ).run(
-          reviewId,
-          project.id,
-          pr.number,
-          pr.title,
-          pr.html_url,
-          `${owner}/${repo}`,
-          `pending-${sessionId}`
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'comment', 0, ?)`,
+          [
+            reviewId,
+            project.id,
+            pr.number,
+            pr.title,
+            pr.html_url,
+            `${owner}/${repo}`,
+            `pending-${sessionId}`
+          ]
         )
 
         triggered++

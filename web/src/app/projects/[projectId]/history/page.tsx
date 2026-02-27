@@ -1,4 +1,6 @@
 import { listProjectReviews } from '@/lib/api'
+import { HistoryTable } from '@/components/history-table'
+import { History } from 'lucide-react'
 
 interface Props {
   params: { projectId: string }
@@ -10,37 +12,28 @@ export default async function ProjectHistoryPage({ params }: Props) {
 
   return (
     <div>
-      <h1 className="page-title">Project History</h1>
-      <p className="muted">{projectId}</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <History size={28} style={{ color: '#60a5fa' }} />
+        <div>
+          <h1 className="page-title">Project History</h1>
+          <p className="muted">{projectId}</p>
+        </div>
+      </div>
       {reviews.length === 0 ? (
-        <div className="card" style={{ marginTop: 12 }}>No reviews executed yet for this project.</div>
+        <div
+          className="card"
+          style={{
+            marginTop: 16,
+            padding: '32px',
+            textAlign: 'center',
+            border: '1px solid rgba(148, 163, 184, 0.2)',
+          }}
+        >
+          <History size={48} style={{ color: '#94a3b8', marginBottom: '16px' }} />
+          <p style={{ color: '#64748b', margin: 0 }}>No reviews executed yet for this project.</p>
+        </div>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>PR</th>
-              <th>Title</th>
-              <th>Verdict</th>
-              <th>Comments</th>
-              <th>Reviewed At</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reviews.map((review) => (
-              <tr key={review.id}>
-                <td>
-                  <a href={review.pr_url} target="_blank" rel="noreferrer">
-                    #{review.pr_number}
-                  </a>
-                </td>
-                <td>{review.pr_title}</td>
-                <td>{review.verdict}</td>
-                <td>{review.comment_count}</td>
-                <td>{new Date(review.reviewed_at).toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <HistoryTable reviews={reviews} projectId={projectId} />
       )}
     </div>
   )

@@ -10,10 +10,12 @@ type EventLine = {
 }
 
 type PRInfo = {
-  number: number
-  title: string
-  html_url: string
-  updated_at: string
+  number?: number
+  pr_number?: number
+  title?: string
+  pr_title?: string
+  html_url?: string
+  updated_at?: string
 }
 
 type PRStatus = {
@@ -112,13 +114,17 @@ export function CheckReviewDialog({ projectId, projectName }: CheckReviewDialogP
     }
   }
 
-  const handleEvent = (event: any) => {
-    switch (event.type) {
-      case 'status':
-        addLine('status', event.message)
-        break
+   const handleEvent = (event: any) => {
+     switch (event.type) {
+       case 'status':
+         addLine('status', event.message)
+         break
 
-      case 'cli_output':
+       case 'info':
+         addLine('info', event.message)
+         break
+
+       case 'cli_output':
         // CLI output from the review process
         addLine('cli', `[PR #${event.pr_number}] ${event.message}`)
         break
@@ -151,9 +157,12 @@ export function CheckReviewDialog({ projectId, projectName }: CheckReviewDialogP
             { number: event.pr_number, title: event.pr_title, html_url: '', updated_at: '' },
           ])
         }
+        const prNum = event.pr_number
+        const prTitle = event.pr_title
+
         addLine(
           event.status === 'already_reviewed' ? 'info' : 'success',
-          `PR #${event.pr_number}: ${event.pr_title} — ${event.status.replace('_', ' ')}`
+          `PR #${prNum}: ${prTitle} — ${event.status.replace('_', ' ')}`
         )
         break
 
@@ -178,10 +187,14 @@ export function CheckReviewDialog({ projectId, projectName }: CheckReviewDialogP
         addLine('error', `❌ PR #${event.pr_number}: ${event.error}`)
         break
 
-      case 'done':
-        setPhase('ready')
-        addLine('done', event.message)
-        break
+       case 'done':
+         setPhase('ready')
+         addLine('done', event.message)
+         // Set prsToReview from the prs_to_review array
+         if (event.prs_to_review) {
+           setPrsToReview(event.prs_to_review)
+         }
+         break
 
       case 'error':
         addLine('error', event.message)
@@ -190,21 +203,28 @@ export function CheckReviewDialog({ projectId, projectName }: CheckReviewDialogP
     }
   }
 
-  const handleTriggerReviews = async () => {
-    if (prsToReview.length === 0) return
+   const handleTriggerReviews = async () => {
+     if (prsToReview.length === 0) return
 
-    setPhase('triggering')
-    addLine('status', 'Starting reviews for pending PRs with live CLI output...')
+     setPhase('triggering')
+     addLine('status', 'Starting reviews for pending PRs with live CLI output...')
 
-    try {
-      const response = await fetch(
-        `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/review-prs-stream`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prs: prsToReview }),
-        }
-      )
+     try {
+       const response = await fetch(
+         `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/review-prs-stream`,
+         {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+             prs: prsToReview.map((pr: any) => ({
+               number: pr.pr_number || pr.number,
+               title: pr.pr_title || pr.title,
+               html_url: pr.html_url || '',
+               updated_at: pr.updated_at || ''
+             }))
+           }),
+         }
+       )
 
       if (!response.ok || !response.body) {
         const err = await response.json().catch(() => ({ error: 'Unknown error' }))

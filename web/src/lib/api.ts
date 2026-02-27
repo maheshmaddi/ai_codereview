@@ -48,6 +48,26 @@ export type ReviewRow = {
   reviewed_at: string
   verdict: 'approve' | 'request_changes' | 'comment'
   comment_count: number
+  github_review_id: number | null
+}
+
+export type ReviewDetail = {
+  comments: {
+    pr_number: number
+    repository: string
+    overall_summary: string
+    verdict: 'approve' | 'request_changes' | 'comment'
+    comments: Array<{
+      file: string
+      start_line: number
+      end_line: number
+      severity: 'HIGH' | 'MEDIUM' | 'LOW'
+      category: string
+      body: string
+    }>
+  } | null
+  summary: string | null
+  review_dir: string
 }
 
 export type ReviewDocument = {
@@ -95,6 +115,10 @@ export function getProjectSettings(projectId: string) {
 
 export function listProjectReviews(projectId: string) {
   return apiFetch<ReviewRow[]>(`/api/projects/${encodeURIComponent(projectId)}/reviews`)
+}
+
+export function getReviewDetails(reviewId: string) {
+  return apiFetch<ReviewDetail>(`/api/reviews/${encodeURIComponent(reviewId)}`)
 }
 
 export function getDocument(projectId: string, moduleName: string | null) {
@@ -215,4 +239,30 @@ export function triggerPRReviewsStream(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prs }),
   })
+}
+
+// GitHub Publisher API
+export type PushReviewResult = {
+  success: boolean
+  github_review_id?: number
+  review_url?: string
+  error?: string
+}
+
+export function pushReviewToGitHub(reviewId: string): Promise<PushReviewResult> {
+  return apiFetch<PushReviewResult>(`/api/github/push-review/${reviewId}`, {
+    method: 'POST',
+  })
+}
+
+export function pushReviewToGitHubByPR(
+  projectId: string,
+  prNumber: number
+): Promise<PushReviewResult> {
+  return apiFetch<PushReviewResult>(
+    `/api/github/push-review-by-pr/${encodeURIComponent(projectId)}/${prNumber}`,
+    {
+      method: 'POST',
+    }
+  )
 }

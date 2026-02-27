@@ -9,6 +9,7 @@ import { webhookRouter } from './routes/webhook.js'
 import { pollingRouter } from './routes/polling.js'
 import { settingsRouter } from './routes/settings.js'
 import { prCheckRouter } from './routes/pr-check.js'
+import { githubPublisherRouter } from './routes/github-publisher.js'
 import { getPoller } from './lib/github-poller.js'
 import { initDatabase } from './db/database.js'
 
@@ -35,6 +36,7 @@ app.use('/api/projects', projectsRouter)
 app.use('/api/reviews', reviewsRouter)
 app.use('/api/sessions', sessionsRouter)
 app.use('/api/settings', settingsRouter)
+app.use('/api/github', githubPublisherRouter)
 app.use('/webhooks', webhookRouter)
 app.use('/api/polling', pollingRouter)
 app.use('/api/projects', prCheckRouter)
@@ -47,20 +49,23 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 // Initialize DB and start server
 initDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`OpenCode Code Review server running on port ${PORT}`)
 
-app.listen(PORT, () => {
-  console.log(`OpenCode Code Review server running on port ${PORT}`)
-
-  // Auto-start GitHub poller if enabled
-  if (process.env.GITHUB_POLLING_ENABLED === 'true') {
-    try {
-      const poller = getPoller()
-      poller.start()
-      console.log('GitHub polling mode enabled')
-    } catch (err) {
-      console.error('Failed to start GitHub poller:', err)
-    }
-  }
-})
-
-export default app
+      // Auto-start GitHub poller if enabled
+      if (process.env.GITHUB_POLLING_ENABLED === 'true') {
+        try {
+          const poller = getPoller()
+          poller.start()
+          console.log('GitHub polling mode enabled')
+        } catch (err) {
+          console.error('Failed to start GitHub poller:', err)
+        }
+      }
+    })
+  })
+  .catch((err) => {
+    console.error('Failed to initialize database:', err)
+    process.exit(1)
+  })

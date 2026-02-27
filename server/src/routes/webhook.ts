@@ -5,7 +5,7 @@
 
 import { Router } from 'express'
 import crypto from 'crypto'
-import { getDb } from '../db/database.js'
+import { dbGet, dbRun } from '../db/database.js'
 import { runCommand } from '../lib/opencode-client.js'
 import { remoteToStorePath } from '../lib/store.js'
 
@@ -58,49 +58,55 @@ webhookRouter.post('/github', express_raw_body_middleware, async (req, res) => {
   const gitRemote = pr.base.repo.clone_url
   const projectId = remoteToStorePath(gitRemote)
 
-  const db = getDb()
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
-    | { id: string; auto_review_enabled: number; review_trigger_label: string }
-    | undefined
-
-  if (!project) {
-    console.log(`Webhook: project not found for remote ${gitRemote}`)
-    return res.status(200).json({ message: 'Project not registered' })
-  }
-
-  if (!project.auto_review_enabled) {
-    return res.status(200).json({ message: 'Auto review disabled for this project' })
-  }
-
-  const hasLabel = pr.labels.some((l) => l.name === project.review_trigger_label)
-  if (!hasLabel) {
-    return res.status(200).json({ message: 'Trigger label not present' })
-  }
-
-  // Acknowledge webhook immediately, process async
-  res.status(202).json({ message: 'Review queued', pr_number: pr.number })
-
-  // Run review asynchronously
   try {
-    const sessionId = await runCommand(
-      'codereview',
-      `${pr.number} ${pr.base.repo.full_name}`
-    )
+    const project = await dbGet('SELECT * FROM projects WHERE id = ?', [projectId]) as
+      | { id: string; auto_review_enabled: number; review_trigger_label: string }
+      | undefined
 
-    db.prepare(
-      "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'review', 'running')"
-    ).run(sessionId, project.id)
+    if (!project) {
+      console.log(`Webhook: project not found for remote ${gitRemote}`)
+      return res.status(200).json({ message: 'Project not registered' })
+    }
 
-    // Pre-create review history entry (will be updated when complete)
-    const reviewId = `${projectId}-pr-${pr.number}-${Date.now()}`
-    db.prepare(
-      `INSERT INTO reviews (id, project_id, pr_number, pr_title, pr_url, repository, reviewed_at, verdict, comment_count, review_dir)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'comment', 0, ?)`
-    ).run(reviewId, project.id, pr.number, pr.title, pr.html_url, pr.base.repo.full_name, `pending-${sessionId}`)
+    if (!project.auto_review_enabled) {
+      return res.status(200).json({ message: 'Auto review disabled for this project' })
+    }
 
-    console.log(`Webhook: Review session ${sessionId} started for PR #${pr.number}`)
-  } catch (e) {
-    console.error('Webhook: Failed to start review:', e)
+    const hasLabel = pr.labels.some((l) => l.name === project.review_trigger_label)
+    if (!hasLabel) {
+      return res.status(200).json({ message: 'Trigger label not present' })
+    }
+
+    // Acknowledge webhook immediately, process async
+    res.status(202).json({ message: 'Review queued', pr_number: pr.number })
+
+    // Run review asynchronously
+    try {
+      const sessionId = await runCommand(
+        'codereview',
+        `${pr.number} ${pr.base.repo.full_name}`
+      )
+
+      await dbRun(
+        "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'review', 'running')",
+        [sessionId, project.id]
+      )
+
+      // Pre-create review history entry (will be updated when complete)
+      const reviewId = `${projectId}-pr-${pr.number}-${Date.now()}`
+      await dbRun(
+        `INSERT INTO reviews (id, project_id, pr_number, pr_title, pr_url, repository, reviewed_at, verdict, comment_count, review_dir)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'comment', 0, ?)`,
+        [reviewId, project.id, pr.number, pr.title, pr.html_url, pr.base.repo.full_name, `pending-${sessionId}`]
+      )
+
+      console.log(`Webhook: Review session ${sessionId} started for PR #${pr.number}`)
+    } catch (e) {
+      console.error('Webhook: Failed to start review:', e)
+    }
+  } catch (err) {
+    console.error('Webhook: Database error:', err)
+    return res.status(500).json({ error: 'Internal server error' })
   }
 })
 

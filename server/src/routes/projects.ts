@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { getDb } from '../db/database.js'
+import { dbAll, dbGet, dbRun } from '../db/database.js'
 import {
   readIndex,
   readDocument,
@@ -21,23 +21,21 @@ import { spawn } from 'child_process'
 
 export const projectsRouter = Router()
 
-function syncProjectsFromStore(): { discovered: number; upserted: number } {
-  const db = getDb()
+async function syncProjectsFromStore(): Promise<{ discovered: number; upserted: number }> {
   const discovered = discoverProjectsFromStore()
   let upserted = 0
 
-  const upsertStmt = db.prepare(
-    `INSERT INTO projects (id, display_name, git_remote, store_path)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       display_name = excluded.display_name,
-       git_remote = excluded.git_remote,
-       store_path = excluded.store_path,
-       updated_at = datetime('now')`
-  )
-
   for (const project of discovered) {
-    upsertStmt.run(project.projectId, project.displayName, project.gitRemote, project.storePath)
+    await dbRun(
+      `INSERT INTO projects (id, display_name, git_remote, store_path)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         display_name = excluded.display_name,
+         git_remote = excluded.git_remote,
+         store_path = excluded.store_path,
+         updated_at = datetime('now')`,
+      [project.projectId, project.displayName, project.gitRemote, project.storePath]
+    )
     upserted += 1
   }
 
@@ -45,11 +43,10 @@ function syncProjectsFromStore(): { discovered: number; upserted: number } {
 }
 
 // GET /api/projects — list all projects with summary info
-projectsRouter.get('/', (_req, res) => {
-  syncProjectsFromStore()
-  const db = getDb()
-  const projects = db
-    .prepare(
+projectsRouter.get('/', async (_req, res) => {
+  try {
+    await syncProjectsFromStore()
+    const projects = await dbAll(
       `SELECT p.id, p.display_name, p.git_remote, p.updated_at,
               COUNT(r.id) as review_count,
               MAX(r.reviewed_at) as last_review_date
@@ -57,8 +54,7 @@ projectsRouter.get('/', (_req, res) => {
        LEFT JOIN reviews r ON r.project_id = p.id
        GROUP BY p.id
        ORDER BY p.display_name`
-    )
-    .all() as Array<{
+    ) as Array<{
       id: string
       display_name: string
       git_remote: string
@@ -67,44 +63,53 @@ projectsRouter.get('/', (_req, res) => {
       last_review_date: string | null
     }>
 
-  const summaries = projects.map((p) => {
-    const index = readIndex(p.id)
-    const storeDir = getProjectStoreDir(p.id)
-    const hasIndex = index !== null
+    const summaries = projects.map((p) => {
+      const index = readIndex(p.id)
+      const storeDir = getProjectStoreDir(p.id)
+      const hasIndex = index !== null
 
-    let status: string
-    if (!hasIndex) {
-      status = 'not_initialized'
-    } else if (!p.last_review_date) {
-      status = 'draft'
-    } else {
-      const indexMtime = fs.existsSync(path.join(storeDir, 'codereview_index.json'))
-        ? fs.statSync(path.join(storeDir, 'codereview_index.json')).mtime.toISOString()
-        : null
-      status = indexMtime && indexMtime > p.updated_at ? 'needs_regeneration' : 'up_to_date'
-    }
+      let status: string
+      if (!hasIndex) {
+        status = 'not_initialized'
+      } else if (!p.last_review_date) {
+        status = 'draft'
+      } else {
+        const indexMtime = fs.existsSync(path.join(storeDir, 'codereview_index.json'))
+          ? fs.statSync(path.join(storeDir, 'codereview_index.json')).mtime.toISOString()
+          : null
+        status = indexMtime && indexMtime > p.updated_at ? 'needs_regeneration' : 'up_to_date'
+      }
 
-    return {
-      project_id: p.id,
-      display_name: p.display_name,
-      git_remote: p.git_remote,
-      total_modules: index ? (index.modules as unknown[]).length : 0,
-      last_review_date: p.last_review_date,
-      last_generated_date: index?.generated_at ?? null,
-      status,
-    }
-  })
+      return {
+        project_id: p.id,
+        display_name: p.display_name,
+        git_remote: p.git_remote,
+        total_modules: index ? (index.modules as unknown[]).length : 0,
+        last_review_date: p.last_review_date,
+        last_generated_date: index?.generated_at ?? null,
+        status,
+      }
+    })
 
-  res.json(summaries)
+    res.json(summaries)
+  } catch (err) {
+    console.error('Error fetching projects:', err)
+    res.status(500).json({ error: 'Failed to fetch projects' })
+  }
 })
 
 // POST /api/projects/refresh — discover and sync projects from filesystem store
-projectsRouter.post('/refresh', (_req, res) => {
-  const result = syncProjectsFromStore()
-  res.json({
-    success: true,
-    ...result,
-  })
+projectsRouter.post('/refresh', async (_req, res) => {
+  try {
+    const result = await syncProjectsFromStore()
+    res.json({
+      success: true,
+      ...result,
+    })
+  } catch (err) {
+    console.error('Error refreshing projects:', err)
+    res.status(500).json({ error: 'Failed to refresh projects' })
+  }
 })
 
 // POST /api/projects/add — clone a git repo and run deep init, streaming SSE status
@@ -213,7 +218,7 @@ projectsRouter.post('/add', async (req, res) => {
 
     // Step 3: Sync the project into the store
     sendEvent('status', { message: 'Syncing project to store...' })
-    const syncResult = syncProjectsFromStore()
+    const syncResult = await syncProjectsFromStore()
 
     // Derive the project ID from the git URL
     const projectId = remoteToStorePath(git_url)
@@ -247,36 +252,38 @@ projectsRouter.get('/:projectId/index', (req, res) => {
 })
 
 // GET /api/projects/:projectId/settings
-projectsRouter.get('/:projectId/settings', (req, res) => {
-  const projectId = decodeURIComponent(req.params.projectId)
-  const db = getDb()
-  const project = db
-    .prepare('SELECT * FROM projects WHERE id = ?')
-    .get(projectId) as Record<string, unknown> | undefined
+projectsRouter.get('/:projectId/settings', async (req, res) => {
+  try {
+    const projectId = decodeURIComponent(req.params.projectId)
+    const project = await dbGet('SELECT * FROM projects WHERE id = ?', [projectId]) as Record<string, unknown> | undefined
 
-  if (!project) {
-    return res.status(404).json({ error: 'Project not found' })
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+
+    const fileSettings = readSettings(projectId) ?? {}
+
+    res.json({
+      project_id: project.id,
+      display_name: project.display_name,
+      git_remote: project.git_remote,
+      github_token_ref: project.github_token_ref,
+      main_branch: project.main_branch,
+      auto_review_enabled: Boolean(project.auto_review_enabled),
+      review_trigger_label: project.review_trigger_label,
+      post_clone_scripts: JSON.parse(project.post_clone_scripts as string),
+      review_model: project.review_model,
+      excluded_paths: JSON.parse(project.excluded_paths as string),
+      max_diff_lines: project.max_diff_lines,
+      severity_threshold: project.severity_threshold,
+      polling_enabled: Boolean(project.polling_enabled),
+      last_polled_at: project.last_polled_at,
+      ...fileSettings,
+    })
+  } catch (err) {
+    console.error('Error fetching project settings:', err)
+    res.status(500).json({ error: 'Failed to fetch project settings' })
   }
-
-  const fileSettings = readSettings(projectId) ?? {}
-
-  res.json({
-    project_id: project.id,
-    display_name: project.display_name,
-    git_remote: project.git_remote,
-    github_token_ref: project.github_token_ref,
-    main_branch: project.main_branch,
-    auto_review_enabled: Boolean(project.auto_review_enabled),
-    review_trigger_label: project.review_trigger_label,
-    post_clone_scripts: JSON.parse(project.post_clone_scripts as string),
-    review_model: project.review_model,
-    excluded_paths: JSON.parse(project.excluded_paths as string),
-    max_diff_lines: project.max_diff_lines,
-    severity_threshold: project.severity_threshold,
-    polling_enabled: Boolean(project.polling_enabled),
-    last_polled_at: project.last_polled_at,
-    ...fileSettings,
-  })
 })
 
 // PATCH /api/projects/:projectId/settings
@@ -294,99 +301,105 @@ const SettingsSchema = z.object({
   polling_enabled: z.boolean().optional(),
 })
 
-projectsRouter.patch('/:projectId/settings', (req, res) => {
-  const projectId = decodeURIComponent(req.params.projectId)
-  const parsed = SettingsSchema.safeParse(req.body)
+projectsRouter.patch('/:projectId/settings', async (req, res) => {
+  try {
+    const projectId = decodeURIComponent(req.params.projectId)
+    const parsed = SettingsSchema.safeParse(req.body)
 
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.message })
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.message })
+    }
+
+    const data = parsed.data
+
+    const fields: string[] = []
+    const values: unknown[] = []
+
+    if (data.display_name !== undefined) { fields.push('display_name = ?'); values.push(data.display_name) }
+    if (data.main_branch !== undefined) { fields.push('main_branch = ?'); values.push(data.main_branch) }
+    if (data.auto_review_enabled !== undefined) { fields.push('auto_review_enabled = ?'); values.push(data.auto_review_enabled ? 1 : 0) }
+    if (data.review_trigger_label !== undefined) { fields.push('review_trigger_label = ?'); values.push(data.review_trigger_label) }
+    if (data.post_clone_scripts !== undefined) { fields.push('post_clone_scripts = ?'); values.push(JSON.stringify(data.post_clone_scripts)) }
+    if (data.review_model !== undefined) { fields.push('review_model = ?'); values.push(data.review_model) }
+    if (data.excluded_paths !== undefined) { fields.push('excluded_paths = ?'); values.push(JSON.stringify(data.excluded_paths)) }
+    if (data.max_diff_lines !== undefined) { fields.push('max_diff_lines = ?'); values.push(data.max_diff_lines) }
+    if (data.severity_threshold !== undefined) { fields.push('severity_threshold = ?'); values.push(data.severity_threshold) }
+    if (data.github_token_ref !== undefined) { fields.push('github_token_ref = ?'); values.push(data.github_token_ref) }
+    if (data.polling_enabled !== undefined) { fields.push('polling_enabled = ?'); values.push(data.polling_enabled ? 1 : 0) }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' })
+    }
+
+    fields.push("updated_at = datetime('now')")
+    values.push(projectId)
+
+    await dbRun(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`, values)
+
+    // Also persist to file settings for use by OpenCode agents
+    writeSettings(projectId, { ...(readSettings(projectId) ?? {}), ...data })
+
+    const updated = await dbGet('SELECT * FROM projects WHERE id = ?', [projectId])
+    res.json(updated)
+  } catch (err) {
+    console.error('Error updating project settings:', err)
+    res.status(500).json({ error: 'Failed to update project settings' })
   }
-
-  const data = parsed.data
-  const db = getDb()
-
-  const fields: string[] = []
-  const values: unknown[] = []
-
-  if (data.display_name !== undefined) { fields.push('display_name = ?'); values.push(data.display_name) }
-  if (data.main_branch !== undefined) { fields.push('main_branch = ?'); values.push(data.main_branch) }
-  if (data.auto_review_enabled !== undefined) { fields.push('auto_review_enabled = ?'); values.push(data.auto_review_enabled ? 1 : 0) }
-  if (data.review_trigger_label !== undefined) { fields.push('review_trigger_label = ?'); values.push(data.review_trigger_label) }
-  if (data.post_clone_scripts !== undefined) { fields.push('post_clone_scripts = ?'); values.push(JSON.stringify(data.post_clone_scripts)) }
-  if (data.review_model !== undefined) { fields.push('review_model = ?'); values.push(data.review_model) }
-  if (data.excluded_paths !== undefined) { fields.push('excluded_paths = ?'); values.push(JSON.stringify(data.excluded_paths)) }
-  if (data.max_diff_lines !== undefined) { fields.push('max_diff_lines = ?'); values.push(data.max_diff_lines) }
-  if (data.severity_threshold !== undefined) { fields.push('severity_threshold = ?'); values.push(data.severity_threshold) }
-  if (data.github_token_ref !== undefined) { fields.push('github_token_ref = ?'); values.push(data.github_token_ref) }
-  if (data.polling_enabled !== undefined) { fields.push('polling_enabled = ?'); values.push(data.polling_enabled ? 1 : 0) }
-
-  if (fields.length === 0) {
-    return res.status(400).json({ error: 'No fields to update' })
-  }
-
-  fields.push("updated_at = datetime('now')")
-  values.push(projectId)
-
-  db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).run(...values)
-
-  // Also persist to file settings for use by OpenCode agents
-  writeSettings(projectId, { ...(readSettings(projectId) ?? {}), ...data })
-
-  const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId)
-  res.json(updated)
 })
 
 // GET /api/projects/:projectId/document
-projectsRouter.get('/:projectId/document', (req, res) => {
-  const projectId = decodeURIComponent(req.params.projectId)
-  const moduleName = (req.query.module as string) ?? null
+projectsRouter.get('/:projectId/document', async (req, res) => {
+  try {
+    const projectId = decodeURIComponent(req.params.projectId)
+    const moduleName = (req.query.module as string) ?? null
 
-  const content = readDocument(projectId, moduleName)
-  if (content === null) {
-    return res.status(404).json({ error: 'Document not found' })
+    const content = readDocument(projectId, moduleName)
+    if (content === null) {
+      return res.status(404).json({ error: 'Document not found' })
+    }
+
+    const versionRow = await dbGet(
+      'SELECT version, modified_at, modified_by FROM document_versions WHERE project_id = ? AND module_name IS ? ORDER BY version DESC LIMIT 1',
+      [projectId, moduleName]
+    ) as { version: number; modified_at: string; modified_by: string } | undefined
+
+    res.json({
+      project_id: projectId,
+      module_name: moduleName,
+      file_path: moduleName ? `modules/${moduleName}_codereview.md` : `${projectId.split('/').pop()}_codereview.md`,
+      content,
+      last_modified: versionRow?.modified_at ?? new Date().toISOString(),
+      version: versionRow?.version ?? 1,
+    })
+  } catch (err) {
+    console.error('Error fetching document:', err)
+    res.status(500).json({ error: 'Failed to fetch document' })
   }
-
-  const db = getDb()
-  const versionRow = db
-    .prepare(
-      'SELECT version, modified_at, modified_by FROM document_versions WHERE project_id = ? AND module_name IS ? ORDER BY version DESC LIMIT 1'
-    )
-    .get(projectId, moduleName) as { version: number; modified_at: string; modified_by: string } | undefined
-
-  res.json({
-    project_id: projectId,
-    module_name: moduleName,
-    file_path: moduleName ? `modules/${moduleName}_codereview.md` : `${projectId.split('/').pop()}_codereview.md`,
-    content,
-    last_modified: versionRow?.modified_at ?? new Date().toISOString(),
-    version: versionRow?.version ?? 1,
-  })
 })
 
 // PUT /api/projects/:projectId/document
-projectsRouter.put('/:projectId/document', (req, res) => {
-  const projectId = decodeURIComponent(req.params.projectId)
-  const { module: moduleName, content } = req.body as { module: string | null; content: string }
-
-  if (typeof content !== 'string') {
-    return res.status(400).json({ error: 'content must be a string' })
-  }
-
+projectsRouter.put('/:projectId/document', async (req, res) => {
   try {
+    const projectId = decodeURIComponent(req.params.projectId)
+    const { module: moduleName, content } = req.body as { module: string | null; content: string }
+
+    if (typeof content !== 'string') {
+      return res.status(400).json({ error: 'content must be a string' })
+    }
+
     const filePath = writeDocument(projectId, moduleName ?? null, content)
 
-    const db = getDb()
     const lastVersion = (
-      db
-        .prepare(
-          'SELECT version FROM document_versions WHERE project_id = ? AND module_name IS ? ORDER BY version DESC LIMIT 1'
-        )
-        .get(projectId, moduleName ?? null) as { version: number } | undefined
+      await dbGet(
+        'SELECT version FROM document_versions WHERE project_id = ? AND module_name IS ? ORDER BY version DESC LIMIT 1',
+        [projectId, moduleName ?? null]
+      ) as { version: number } | undefined
     )?.version ?? 0
 
-    db.prepare(
-      'INSERT INTO document_versions (project_id, module_name, content, version, modified_by) VALUES (?, ?, ?, ?, ?)'
-    ).run(projectId, moduleName ?? null, content, lastVersion + 1, 'user')
+    await dbRun(
+      'INSERT INTO document_versions (project_id, module_name, content, version, modified_by) VALUES (?, ?, ?, ?, ?)',
+      [projectId, moduleName ?? null, content, lastVersion + 1, 'user']
+    )
 
     res.json({ success: true, file_path: filePath, version: lastVersion + 1 })
   } catch (e) {
@@ -395,44 +408,50 @@ projectsRouter.put('/:projectId/document', (req, res) => {
 })
 
 // GET /api/projects/:projectId/document/versions
-projectsRouter.get('/:projectId/document/versions', (req, res) => {
-  const projectId = decodeURIComponent(req.params.projectId)
-  const moduleName = (req.query.module as string) ?? null
+projectsRouter.get('/:projectId/document/versions', async (req, res) => {
+  try {
+    const projectId = decodeURIComponent(req.params.projectId)
+    const moduleName = (req.query.module as string) ?? null
 
-  const db = getDb()
-  const versions = db
-    .prepare(
-      'SELECT version, modified_at, modified_by FROM document_versions WHERE project_id = ? AND module_name IS ? ORDER BY version DESC'
+    const versions = await dbAll(
+      'SELECT version, modified_at, modified_by FROM document_versions WHERE project_id = ? AND module_name IS ? ORDER BY version DESC',
+      [projectId, moduleName]
     )
-    .all(projectId, moduleName)
 
-  res.json(versions)
+    res.json(versions)
+  } catch (err) {
+    console.error('Error fetching document versions:', err)
+    res.status(500).json({ error: 'Failed to fetch document versions' })
+  }
 })
 
 // GET /api/projects/:projectId/reviews
-projectsRouter.get('/:projectId/reviews', (req, res) => {
-  const projectId = decodeURIComponent(req.params.projectId)
-  const db = getDb()
-  const reviews = db
-    .prepare(
-      'SELECT * FROM reviews WHERE project_id = ? ORDER BY reviewed_at DESC'
+projectsRouter.get('/:projectId/reviews', async (req, res) => {
+  try {
+    const projectId = decodeURIComponent(req.params.projectId)
+    const reviews = await dbAll(
+      'SELECT * FROM reviews WHERE project_id = ? ORDER BY reviewed_at DESC',
+      [projectId]
     )
-    .all(projectId)
 
-  res.json(reviews)
+    res.json(reviews)
+  } catch (err) {
+    console.error('Error fetching project reviews:', err)
+    res.status(500).json({ error: 'Failed to fetch project reviews' })
+  }
 })
 
 // POST /api/projects/:projectId/initialize — trigger /codereview-int-deep
 projectsRouter.post('/:projectId/initialize', async (req, res) => {
-  const projectId = decodeURIComponent(req.params.projectId)
-
   try {
+    const projectId = decodeURIComponent(req.params.projectId)
+
     const sessionId = await runCommand('codereview-int-deep')
 
-    const db = getDb()
-    db.prepare(
-      "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'init', 'running')"
-    ).run(sessionId, projectId)
+    await dbRun(
+      "INSERT INTO sessions (id, project_id, type, status) VALUES (?, ?, 'init', 'running')",
+      [sessionId, projectId]
+    )
 
     res.json({ session_id: sessionId, message: 'Initialization started' })
   } catch (e) {
@@ -441,29 +460,30 @@ projectsRouter.post('/:projectId/initialize', async (req, res) => {
 })
 
 // DELETE /api/projects/:projectId — delete project and clear centralized store files
-projectsRouter.delete('/:projectId', (req, res) => {
-  const projectId = decodeURIComponent(req.params.projectId)
-  const db = getDb()
-
-  const project = db
-    .prepare('SELECT id, store_path FROM projects WHERE id = ?')
-    .get(projectId) as { id: string; store_path: string } | undefined
-
-  if (!project) {
-    return res.status(404).json({ error: 'Project not found' })
-  }
-
-  // Capture review directories before cascading delete removes rows.
-  const reviewDirs = db
-    .prepare('SELECT review_dir FROM reviews WHERE project_id = ?')
-    .all(projectId) as Array<{ review_dir: string }>
-
-  const projectStoreDir =
-    typeof project.store_path === 'string' && project.store_path.trim()
-      ? project.store_path
-      : getProjectStoreDir(projectId)
-
+projectsRouter.delete('/:projectId', async (req, res) => {
   try {
+    const projectId = decodeURIComponent(req.params.projectId)
+
+    const project = await dbGet(
+      'SELECT id, store_path FROM projects WHERE id = ?',
+      [projectId]
+    ) as { id: string; store_path: string } | undefined
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+
+    // Capture review directories before cascading delete removes rows.
+    const reviewDirs = await dbAll(
+      'SELECT review_dir FROM reviews WHERE project_id = ?',
+      [projectId]
+    ) as Array<{ review_dir: string }>
+
+    const projectStoreDir =
+      typeof project.store_path === 'string' && project.store_path.trim()
+        ? project.store_path
+        : getProjectStoreDir(projectId)
+
     if (fs.existsSync(projectStoreDir)) {
       fs.rmSync(projectStoreDir, { recursive: true, force: true })
     }
@@ -475,7 +495,7 @@ projectsRouter.delete('/:projectId', (req, res) => {
       }
     }
 
-    db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
+    await dbRun('DELETE FROM projects WHERE id = ?', [projectId])
 
     return res.json({ success: true, project_id: projectId })
   } catch (e) {

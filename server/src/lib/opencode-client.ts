@@ -63,7 +63,7 @@ export async function runCommand(
   const client = getOpencodeClient()
 
   // Use global model setting
-  const globalModel = getGlobalSetting('review_model')
+  const globalModel = await getGlobalSetting('review_model')
   if (globalModel) {
     console.log(`Using global review model: ${globalModel}`)
   }
@@ -147,7 +147,7 @@ export async function runCommandInDir(
     throwOnError: false,
   })
 
-  const globalModel = getGlobalSetting('review_model')
+  const globalModel = await getGlobalSetting('review_model')
   if (globalModel) {
     console.log(`Using global review model: ${globalModel}`)
   }

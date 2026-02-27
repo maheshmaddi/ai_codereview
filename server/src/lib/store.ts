@@ -92,9 +92,72 @@ export function writeDocument(
 
 /** Read review_comments.json from a review directory */
 export function readReviewOutput(reviewDir: string): Record<string, unknown> | null {
-  const filePath = path.join(REVIEWS_DIR, reviewDir, 'review_comments.json')
-  if (!fs.existsSync(filePath)) return null
-  return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+  // Handle both relative and absolute paths
+  const filePath = path.isAbsolute(reviewDir)
+    ? path.join(reviewDir, 'review_comments.json')
+    : path.join(REVIEWS_DIR, reviewDir, 'review_comments.json')
+
+  console.log(`[Store] Reading review output from: ${filePath}`)
+
+  if (!fs.existsSync(filePath)) {
+    console.error(`[Store] Review file not found: ${filePath}`)
+    return null
+  }
+
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8').trim()
+
+    if (!content || content === '{}') {
+      console.warn(`[Store] Review file is empty: ${filePath}`)
+      return null
+    }
+
+    const data = JSON.parse(content)
+    console.log(`[Store] Successfully loaded review data with ${(data as any).comments?.length || 0} comments`)
+    return data
+  } catch (error) {
+    console.error(`[Store] Failed to parse review file:`, error)
+    return null
+  }
+}
+
+/** Read review_summary.md from a review directory */
+export function readReviewSummary(reviewDir: string): string | null {
+  const filePath = path.isAbsolute(reviewDir)
+    ? path.join(reviewDir, 'review_summary.md')
+    : path.join(REVIEWS_DIR, reviewDir, 'review_summary.md')
+
+  console.log(`[Store] Reading review summary from: ${filePath}`)
+
+  if (!fs.existsSync(filePath)) {
+    console.error(`[Store] Review summary file not found: ${filePath}`)
+    return null
+  }
+
+  try {
+    const data = fs.readFileSync(filePath, 'utf-8')
+    console.log(`[Store] Successfully loaded review summary (${data.length} bytes)`)
+    return data
+  } catch (error) {
+    console.error(`[Store] Failed to read review summary file:`, error)
+    return null
+  }
+}
+
+/** Find review directory by PR number and repository name */
+export function findReviewDir(prNumber: number, repository: string): string | null {
+  if (!fs.existsSync(REVIEWS_DIR)) return null
+
+  const dirs = fs.readdirSync(REVIEWS_DIR)
+  const pattern = new RegExp(`\\d{4}-\\d{2}-\\d{2}_PR-${prNumber}_${repository.replace(/\//g, '_')}$`)
+
+  for (const dir of dirs) {
+    if (pattern.test(dir)) {
+      return dir
+    }
+  }
+
+  return null
 }
 
 /** List all review directories */
