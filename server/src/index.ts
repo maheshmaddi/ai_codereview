@@ -9,6 +9,7 @@ import { webhookRouter } from './routes/webhook.js'
 import { pollingRouter } from './routes/polling.js'
 import { settingsRouter } from './routes/settings.js'
 import { prCheckRouter } from './routes/pr-check.js'
+import { printerRouter } from './routes/printer.js'
 import { getPoller } from './lib/github-poller.js'
 import { initDatabase } from './db/database.js'
 
@@ -38,6 +39,7 @@ app.use('/api/settings', settingsRouter)
 app.use('/webhooks', webhookRouter)
 app.use('/api/polling', pollingRouter)
 app.use('/api/projects', prCheckRouter)
+app.use('/api/printer', printerRouter)
 
 // Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -182,11 +182,22 @@ export async function initDatabase(): Promise<void> {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- Print jobs table (TSC TE244 printer history)
+    CREATE TABLE IF NOT EXISTS print_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_type TEXT NOT NULL DEFAULT 'custom',
+      payload TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL CHECK (status IN ('success', 'error')),
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_reviews_project_id ON reviews(project_id);
     CREATE INDEX IF NOT EXISTS idx_reviews_reviewed_at ON reviews(reviewed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_doc_versions_project_module ON document_versions(project_id, module_name);
     CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
+    CREATE INDEX IF NOT EXISTS idx_print_jobs_created_at ON print_jobs(created_at DESC);
   `)
 
   console.log(`Database initialized at ${DB_PATH}`)
