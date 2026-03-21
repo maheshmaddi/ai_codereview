@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { getGlobalSetting, setGlobalSetting } from '../db/database.js'
-import { getAvailableModels } from '../lib/opencode-client.js'
+import { getAvailableModels } from '../lib/openclaw-client.js'
 
 export const settingsRouter = Router()
 

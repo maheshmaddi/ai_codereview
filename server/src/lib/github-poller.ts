@@ -5,7 +5,7 @@
 
 import { Octokit } from 'octokit'
 import { getDb } from '../db/database.js'
-import { runCommand } from './opencode-client.js'
+import { runCommand } from './openclaw-client.js'
 
 interface ProjectRow {
   id: string

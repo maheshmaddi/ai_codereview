@@ -6,7 +6,7 @@
 import { Router } from 'express'
 import crypto from 'crypto'
 import { getDb } from '../db/database.js'
-import { runCommand } from '../lib/opencode-client.js'
+import { runCommand } from '../lib/openclaw-client.js'
 import { remoteToStorePath } from '../lib/store.js'
 
 export const webhookRouter = Router()

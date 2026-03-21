@@ -13,7 +13,7 @@ import {
   REVIEWS_DIR,
   PROJECTS_DIR,
 } from '../lib/store.js'
-import { runCommand, runCommandInDirWithFallback, pollSessionMessages } from '../lib/opencode-client.js'
+import { runCommand, runCommandInDirWithFallback, pollSessionMessages } from '../lib/openclaw-client.js'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'

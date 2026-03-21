@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { getDb } from '../db/database.js'
-import { getSessionStatus } from '../lib/opencode-client.js'
+import { getSessionStatus } from '../lib/openclaw-client.js'
 
 export const sessionsRouter = Router()
 
