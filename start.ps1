@@ -1,7 +1,8 @@
 # ============================================================
-# OpenCode Code Review - Single Start Script (Windows)
+# OpenClaw Code Review - Single Start Script (Windows)
 # ============================================================
 # Starts the backend API server and Next.js web UI without Docker.
+# Migrated from OpenCode to OpenClaw for AI code review.
 # Prerequisites: Node.js 18+ must be installed.
 # Usage: .\start.ps1
 # ============================================================
@@ -10,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  OpenCode Code Review - Starting...    " -ForegroundColor Cyan
+Write-Host "  OpenClaw Code Review - Starting...   " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -22,6 +23,11 @@ try {
 
 if (-not $nodeVersion) {
     Write-Host "[ERROR] Node.js is not installed. Please install Node.js 18+ from https://nodejs.org" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Quick install (Windows):" -ForegroundColor Yellow
+    Write-Host "  1. Download from: https://nodejs.org/en/download/" -ForegroundColor White
+    Write-Host "  2. Or use winget: winget install OpenJS.NodeJS.LTS" -ForegroundColor White
+    Write-Host "  3. Or use chocolatey: choco install nodejs-lts" -ForegroundColor White
     exit 1
 }
 
@@ -32,97 +38,76 @@ if ($major -lt 18) {
 }
 Write-Host "[OK] Node.js $nodeVersion" -ForegroundColor Green
 
-# --- Sync OpenCode Config ---
+# --- Check for OpenClaw Installation ---
 $projectRoot = $PSScriptRoot
 Write-Host ""
-Write-Host "Syncing OpenCode configuration..." -ForegroundColor Cyan
+Write-Host "Checking OpenClaw installation..." -ForegroundColor Cyan
 
-function Sync-OpencodeConfig {
-    $globalOpenCodePath = Join-Path $env:USERPROFILE ".opencode"
-    $projectOpenCodePath = Join-Path $projectRoot ".opencode"
-    
-    if (-not (Test-Path $globalOpenCodePath)) {
-        New-Item -ItemType Directory -Path $globalOpenCodePath -Force | Out-Null
-        Write-Host "[CREATED] Global OpenCode directory: $globalOpenCodePath" -ForegroundColor Green
-    }
-    
-    # Copy agents
-    $projectAgents = Join-Path $projectOpenCodePath "agents"
-    $globalAgents = Join-Path $globalOpenCodePath "agents"
-    if (Test-Path $projectAgents) {
-        if (-not (Test-Path $globalAgents)) {
-            New-Item -ItemType Directory -Path $globalAgents -Force | Out-Null
-        }
-        Copy-Item -Path "$projectAgents\*" -Destination $globalAgents -Recurse -Force
-        Write-Host "[OK] Synced OpenCode agents to global config" -ForegroundColor Green
-    }
-    
-    # Copy commands
-    $projectCommands = Join-Path $projectOpenCodePath "commands"
-    $globalCommands = Join-Path $globalOpenCodePath "commands"
-    if (Test-Path $projectCommands) {
-        if (-not (Test-Path $globalCommands)) {
-            New-Item -ItemType Directory -Path $globalCommands -Force | Out-Null
-        }
-        Copy-Item -Path "$projectCommands\*" -Destination $globalCommands -Recurse -Force
-        Write-Host "[OK] Synced OpenCode commands to global config" -ForegroundColor Green
-    }
-    
-    # Copy rules if exists
-    $projectRules = Join-Path $projectOpenCodePath "rules"
-    $globalRules = Join-Path $globalOpenCodePath "rules"
-    if (Test-Path $projectRules) {
-        if (-not (Test-Path $globalRules)) {
-            New-Item -ItemType Directory -Path $globalRules -Force | Out-Null
-        }
-        Copy-Item -Path "$projectRules\*" -Destination $globalRules -Recurse -Force
-        Write-Host "[OK] Synced OpenCode rules to global config" -ForegroundColor Green
-    }
+$openclawCmd = $null
+try {
+    $openclawCmd = (Get-Command openclaw -ErrorAction SilentlyContinue).Source
+} catch {}
 
-    # Merge project opencode.json permissions into global ~/.config/opencode/opencode.json
-    # This ensures permissions apply even when opencode CLI runs from temp directories
-    $projectOpencodeJson = Join-Path $projectRoot "opencode.json"
-    $globalOpencodeConfigDir = Join-Path $env:USERPROFILE ".config\opencode"
-    $globalOpencodeJson = Join-Path $globalOpencodeConfigDir "opencode.json"
+if (-not $openclawCmd) {
+    Write-Host "[WARN] OpenClaw CLI not found in PATH" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "OpenClaw is required for AI code review features." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Installation options:" -ForegroundColor Cyan
+    Write-Host "  1. Install via npm:" -ForegroundColor White
+    Write-Host "     npm install -g openclaw" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  2. Install from source:" -ForegroundColor White
+    Write-Host "     git clone https://github.com/openclaw/openclaw.git" -ForegroundColor Gray
+    Write-Host "     cd openclaw && npm install && npm link" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  3. Continue without OpenClaw (limited functionality)" -ForegroundColor White
+    Write-Host ""
     
-    if (Test-Path $projectOpencodeJson) {
-        try {
-            $projectConfig = Get-Content $projectOpencodeJson -Raw | ConvertFrom-Json
-            if ($projectConfig.permission) {
-                # Read or create global config
-                if (Test-Path $globalOpencodeJson) {
-                    $globalConfig = Get-Content $globalOpencodeJson -Raw | ConvertFrom-Json
-                } else {
-                    if (-not (Test-Path $globalOpencodeConfigDir)) {
-                        New-Item -ItemType Directory -Path $globalOpencodeConfigDir -Force | Out-Null
-                    }
-                    $globalConfig = [PSCustomObject]@{ '$schema' = 'https://opencode.ai/config.json' }
-                }
-                
-                # Merge permission block
-                if (-not $globalConfig.permission) {
-                    $globalConfig | Add-Member -MemberType NoteProperty -Name 'permission' -Value $projectConfig.permission -Force
-                } else {
-                    # Merge each permission key (external_directory, etc)
-                    $projectConfig.permission.PSObject.Properties | ForEach-Object {
-                        if ($globalConfig.permission.PSObject.Properties.Match($_.Name).Count -eq 0) {
-                             $globalConfig.permission | Add-Member -MemberType NoteProperty -Name $_.Name -Value $_.Value -Force
-                        } else {
-                             # Ideally deep merge, but for now just overwrite top-level keys like "external_directory"
-                             $globalConfig.permission.$($_.Name) = $_.Value
-                        }
-                    }
-                }
-                $globalConfig | ConvertTo-Json -Depth 10 | Set-Content $globalOpencodeJson -Encoding UTF8
-                Write-Host "[OK] Synced OpenCode permissions to global config" -ForegroundColor Green
-            }
-        } catch {
-            Write-Host "[WARN] Failed to sync OpenCode permissions: $_" -ForegroundColor Yellow
-        }
+    $response = Read-Host "Continue without OpenClaw? (y/N)"
+    if ($response -ne 'y' -and $response -ne 'Y') {
+        Write-Host "[INFO] Please install OpenClaw and run this script again." -ForegroundColor Yellow
+        exit 0
     }
+    
+    Write-Host "[WARN] Continuing without OpenClaw - AI features will not work" -ForegroundColor Yellow
+} else {
+    Write-Host "[OK] OpenClaw CLI found: $openclawCmd" -ForegroundColor Green
 }
 
-Sync-OpencodeConfig
+# --- Check for OpenClaw Skills ---
+Write-Host ""
+Write-Host "Checking OpenClaw skills..." -ForegroundColor Cyan
+
+$requiredSkills = @("codereview-init", "codereview-pr", "codereview-push")
+$missingSkills = @()
+
+if ($openclawCmd) {
+    foreach ($skill in $requiredSkills) {
+        try {
+            $skillCheck = & openclaw skills list 2>&1 | Select-String $skill
+            if ($skillCheck) {
+                Write-Host "[OK] Skill found: $skill" -ForegroundColor Green
+            } else {
+                $missingSkills += $skill
+            }
+        } catch {
+            $missingSkills += $skill
+        }
+    }
+    
+    if ($missingSkills.Count -gt 0) {
+        Write-Host ""
+        Write-Host "[WARN] Missing skills: $($missingSkills -join ', ')" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Install missing skills:" -ForegroundColor Cyan
+        Write-Host "  /skill-creator `"$skill`"" -ForegroundColor White
+        Write-Host "  or" -ForegroundColor White
+        Write-Host "  /clawhub install $skill" -ForegroundColor White
+        Write-Host ""
+        Write-Host "See MIGRATION.md for skill creation instructions." -ForegroundColor Yellow
+    }
+}
 
 # --- Setup .env files ---
 
@@ -133,7 +118,11 @@ $serverEnvExample = Join-Path $serverDir ".env.example"
 if (-not (Test-Path $serverEnv)) {
     if (Test-Path $serverEnvExample) {
         Copy-Item $serverEnvExample $serverEnv
-        Write-Host '[SETUP] Created server/.env from .env.example - please edit with your settings' -ForegroundColor Yellow
+        Write-Host '[SETUP] Created server/.env from .env.example' -ForegroundColor Yellow
+        Write-Host '[ACTION] Please edit server/.env with your settings:' -ForegroundColor Yellow
+        Write-Host '  - OPENCLAW_SERVER_URL (default: http://localhost:3000)' -ForegroundColor White
+        Write-Host '  - GITHUB_TOKEN (your GitHub PAT)' -ForegroundColor White
+        Write-Host '  - GITHUB_WEBHOOK_SECRET (if using webhooks)' -ForegroundColor White
     } else {
         Write-Host '[WARN] server/.env.example not found' -ForegroundColor Yellow
     }
@@ -148,7 +137,7 @@ $webEnvExample = Join-Path $webDir ".env.example"
 if (-not (Test-Path $webEnv)) {
     if (Test-Path $webEnvExample) {
         Copy-Item $webEnvExample $webEnv
-        Write-Host '[SETUP] Created web/.env.local from .env.example - please edit with your settings' -ForegroundColor Yellow
+        Write-Host '[SETUP] Created web/.env.local from .env.example' -ForegroundColor Yellow
     } else {
         Write-Host '[WARN] web/.env.example not found' -ForegroundColor Yellow
     }
@@ -180,21 +169,31 @@ Write-Host "[OK] Web dependencies installed" -ForegroundColor Green
 Write-Host ""
 Write-Host "Starting services..." -ForegroundColor Cyan
 
-# Start OpenCode server in background (required for AI review features)
-# Resolve the full path first (Start-Job runs in a clean environment without PATH)
-$opencodeCmd = (Get-Command opencode -ErrorAction SilentlyContinue)
-if ($opencodeCmd) { $opencodeCmd = $opencodeCmd.Source }
-if (-not $opencodeCmd) {
-    Write-Host "[WARN] opencode not found in PATH - AI features may not work" -ForegroundColor Yellow
-    $opencodeJob = $null
-} else {
-    $opencodeJob = Start-Job -ScriptBlock {
-        & $using:opencodeCmd serve 2>&1
+# Start OpenClaw server in background (if installed)
+$openclawJob = $null
+if ($openclawCmd) {
+    # Check if OpenClaw is already running
+    $openclawRunning = $false
+    try {
+        $healthCheck = Invoke-WebRequest -Uri "http://localhost:3000/status" -TimeoutSec 2 -ErrorAction SilentlyContinue
+        if ($healthCheck.StatusCode -eq 200) {
+            $openclawRunning = $true
+        }
+    } catch {}
+    
+    if ($openclawRunning) {
+        Write-Host "[OK] OpenClaw already running (port 3000)" -ForegroundColor Green
+    } else {
+        $openclawJob = Start-Job -ScriptBlock {
+            & $using:openclawCmd gateway start 2>&1
+        }
+        Write-Host "[STARTED] OpenClaw server (port 3000)" -ForegroundColor Green
+        Write-Host "Waiting for OpenClaw to initialize (5s)..." -ForegroundColor Cyan
+        Start-Sleep -Seconds 5
+        Write-Host "[OK] Continuing startup" -ForegroundColor Green
     }
-    Write-Host "[STARTED] OpenCode server (port 4096)" -ForegroundColor Green
-    Write-Host "Waiting for OpenCode to initialize (5s)..." -ForegroundColor Cyan
-    Start-Sleep -Seconds 5
-    Write-Host "[OK] Continuing startup" -ForegroundColor Green
+} else {
+    Write-Host "[SKIPPED] OpenClaw not installed - AI features disabled" -ForegroundColor Yellow
 }
 
 # Start server in background
@@ -211,20 +210,32 @@ $webJob = Start-Job -ScriptBlock {
     Set-Location "web"
     npm run dev 2>&1
 }
-Write-Host "[STARTED] Web UI (port 3000)" -ForegroundColor Green
+Write-Host "[STARTED] Web UI (port 3002)" -ForegroundColor Green
 
 # --- Display Info ---
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Services Running:" -ForegroundColor Cyan
-Write-Host "  OpenCode:    http://localhost:4096" -ForegroundColor White
+Write-Host "  OpenClaw:    http://localhost:3000" -ForegroundColor White
 Write-Host "  API Server:  http://localhost:3001" -ForegroundColor White
-Write-Host "  Web UI:      http://localhost:3000" -ForegroundColor White
+Write-Host "  Web UI:      http://localhost:3002" -ForegroundColor White
 Write-Host "  Health:      http://localhost:3001/health" -ForegroundColor White
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host '[INFO] If using polling mode, ensure GITHUB_POLLING_ENABLED=true in server/.env' -ForegroundColor Yellow
+Write-Host "Configuration:" -ForegroundColor Yellow
+Write-Host "  - Edit server/.env for GitHub token and settings" -ForegroundColor White
+Write-Host "  - Set GITHUB_POLLING_ENABLED=true for polling mode" -ForegroundColor White
 Write-Host ""
+
+if ($missingSkills.Count -gt 0) {
+    Write-Host "Missing Skills:" -ForegroundColor Yellow
+    foreach ($skill in $missingSkills) {
+        Write-Host "  - $skill" -ForegroundColor White
+    }
+    Write-Host "  Install with: /skill-creator or /clawhub install" -ForegroundColor White
+    Write-Host ""
+}
+
 Write-Host "Press Ctrl+C to stop all services..." -ForegroundColor Gray
 Write-Host ""
 
@@ -232,10 +243,9 @@ Write-Host ""
 try {
     while ($true) {
         # Check if jobs are still running
-        # Check if OpenCode process is still running
-        if ($opencodeJob -and $opencodeJob.State -eq 'Failed') {
-            Write-Host "[ERROR] OpenCode server crashed. Logs:" -ForegroundColor Red
-            Receive-Job -Id $opencodeJob.Id
+        if ($openclawJob -and $openclawJob.State -eq 'Failed') {
+            Write-Host "[ERROR] OpenClaw server crashed. Logs:" -ForegroundColor Red
+            Receive-Job -Id $openclawJob.Id
         }
         $serverState = (Get-Job -Id $serverJob.Id).State
         $webState = (Get-Job -Id $webJob.Id).State
@@ -253,10 +263,10 @@ try {
 } finally {
     Write-Host ""
     Write-Host "Stopping services..." -ForegroundColor Yellow
-    # Stop OpenCode job
-    if ($opencodeJob) {
-        Stop-Job -Id $opencodeJob.Id -ErrorAction SilentlyContinue
-        Remove-Job -Id $opencodeJob.Id -Force -ErrorAction SilentlyContinue
+    # Stop OpenClaw job
+    if ($openclawJob) {
+        Stop-Job -Id $openclawJob.Id -ErrorAction SilentlyContinue
+        Remove-Job -Id $openclawJob.Id -Force -ErrorAction SilentlyContinue
     }
     Stop-Job -Id $serverJob.Id -ErrorAction SilentlyContinue
     Stop-Job -Id $webJob.Id -ErrorAction SilentlyContinue

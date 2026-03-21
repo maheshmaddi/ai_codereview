@@ -1,19 +1,27 @@
-# OpenCode Code Review — git-codereview
+# OpenClaw Code Review — AI Code Review Platform
 
-AI-powered, centralized code review platform integrating with GitHub pull requests via OpenCode.
+AI-powered, centralized code review platform integrating with GitHub pull requests via **OpenClaw**.
+
+> **Migration Notice:** This project has been migrated from OpenCode to OpenClaw for better integration, cost savings, and flexibility. See [MIGRATION.md](MIGRATION.md) for details.
 
 ## Overview
 
-This system provides three OpenCode custom commands and a web-based management UI:
+This system provides three OpenClaw skills and a web-based management UI:
 
 | Component | Description |
 |-----------|-------------|
-| `/codereview-int-deep` | Deep initialization — scans the project, generates module-level and root-level review guidelines, produces `codereview_index.json` |
-| `/codereview` | Executes a code review against a PR by diffing branches, loading relevant guidelines, and generating structured review output |
-| `/pushcomments` | Posts the review summary and per-line comments to the GitHub PR via the GitHub API |
+| `codereview-init` | Deep initialization — scans the project, generates module-level and root-level review guidelines, produces `codereview_index.json` |
+| `codereview-pr` | Executes a code review against a PR by diffing branches, loading relevant guidelines, and generating structured review output |
+| `codereview-push` | Posts the review summary and per-line comments to the GitHub PR via the GitHub API |
 | Web UI | Next.js app with Azure AD SSO for architects to view, edit, and manage review documents |
 
 ## Quick Start
+
+### Prerequisites
+
+- **Node.js 18+** — Required for the API server and web UI
+- **OpenClaw** — Required for AI code review features (optional but recommended)
+- **GitHub Personal Access Token** — For GitHub API access
 
 ### Option A: Without Docker (Recommended for local dev)
 
@@ -27,10 +35,12 @@ chmod +x start.sh && ./start.sh
 
 This single script will:
 1. Check Node.js 18+ is installed
-2. Create `.env` files from examples (if not present)
-3. Install dependencies for server and web
-4. Start the API server on `http://localhost:3001`
-5. Start the Web UI on `http://localhost:3000`
+2. Check for OpenClaw installation
+3. Create `.env` files from examples (if not present)
+4. Install dependencies for server and web
+5. Start OpenClaw server on `http://localhost:3000` (if installed)
+6. Start the API server on `http://localhost:3001`
+7. Start the Web UI on `http://localhost:3002`
 
 ### Option B: With Docker
 
@@ -38,11 +48,29 @@ This single script will:
 docker compose up
 ```
 
-### 1. Initialize a project
+### 1. Install OpenClaw Skills
+
+The following OpenClaw skills are required:
 
 ```bash
-# In your project directory with OpenCode
-/codereview-int-deep
+# In OpenClaw
+/skill-creator "codereview-init - Initialize project review guidelines"
+/skill-creator "codereview-pr - Review a pull request"
+/skill-creator "codereview-push - Post review comments to GitHub"
+```
+
+Or install from ClawHub (if available):
+```bash
+/clawhub install codereview-init
+/clawhub install codereview-pr
+/clawhub install codereview-push
+```
+
+### 2. Initialize a project
+
+```bash
+# Via OpenClaw
+/codereview-init org/project-name
 ```
 
 This generates:
@@ -50,16 +78,18 @@ This generates:
 - `~/.codereview-store/projects/{host}/{org}/{project}/modules/*.md`
 - `~/.codereview-store/projects/{host}/{org}/{project}/codereview_index.json`
 
-### 2. Review a pull request
+### 3. Review a pull request
 
 ```bash
-/codereview 142 org/project-name
+# Via OpenClaw
+/codereview-pr 142 org/project-name
 ```
 
-### 3. Push review comments to GitHub
+### 4. Push review comments to GitHub
 
 ```bash
-/pushcomments 142
+# Via OpenClaw
+/codereview-push 142 org/project-name
 ```
 
 ## GitHub Integration
