@@ -91,7 +91,7 @@ $requiredSkills = @(
 )
 $missingSkills = @()
 
-$commandsDir = Join-Path (Join-Path $projectRoot ".opencode") "commands"
+$commandsDir = Join-Path $projectRoot ".opencode" "commands"
 foreach ($skill in $requiredSkills) {
     $skillFile = Join-Path $commandsDir $skill.file
     if (Test-Path $skillFile) {
