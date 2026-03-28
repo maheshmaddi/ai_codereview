@@ -401,3 +401,524 @@ a {
     align-items: flex-start;
   }
 }
+
+/* ─── Phase Stepper ─────────────────────────────────────────────────────────── */
+
+.phase-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 20px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 6px 8px;
+  overflow-x: auto;
+}
+
+.phase-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  text-decoration: none;
+}
+
+.phase-step:hover:not(.phase-step--locked) {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.phase-step--active {
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.phase-step--completed {
+  color: #16a34a;
+}
+
+.phase-step--locked {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.phase-step__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.phase-step--active .phase-step__num {
+  background: #2563eb;
+  color: #fff;
+}
+
+.phase-step--completed .phase-step__num {
+  background: #16a34a;
+  color: #fff;
+}
+
+.phase-arrow {
+  color: #cbd5e1;
+  font-size: 16px;
+  flex-shrink: 0;
+  padding: 0 4px;
+}
+
+/* ─── File Upload ────────────────────────────────────────────────────────────── */
+
+.upload-zone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: #f8fafc;
+}
+
+.upload-zone:hover,
+.upload-zone--dragover {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.upload-zone__icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  color: #94a3b8;
+}
+
+.upload-zone__text {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0;
+}
+
+.upload-zone__limit {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.uploaded-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.uploaded-file__name {
+  flex: 1;
+  color: #334155;
+  font-weight: 500;
+}
+
+.uploaded-file__size {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+/* ─── Q&A Panel ──────────────────────────────────────────────────────────────── */
+
+.qa-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.qa-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.qa-item--unanswered {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+
+.qa-item--answered {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.qa-question {
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f2937;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.qa-question__badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fbbf24;
+  color: #78350f;
+  font-weight: 600;
+}
+
+.qa-item--answered .qa-question__badge {
+  background: #86efac;
+  color: #14532d;
+}
+
+.qa-answer {
+  padding: 10px 14px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.qa-answer--text {
+  font-size: 14px;
+  color: #334155;
+  flex: 1;
+}
+
+/* ─── Revision Selector ──────────────────────────────────────────────────────── */
+
+.revision-selector {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.revision-pill {
+  padding: 4px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+  background: #fff;
+  color: #334155;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.revision-pill:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.revision-pill--active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  font-weight: 600;
+}
+
+.revision-pill--approved {
+  border-color: #16a34a;
+}
+
+.revision-pill--approved.revision-pill--active {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
+.revision-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: 4px;
+}
+
+.revision-status--approved { background: #dcfce7; color: #15803d; }
+.revision-status--pending_review { background: #dbeafe; color: #1d4ed8; }
+.revision-status--revision_requested { background: #fef9c3; color: #a16207; }
+.revision-status--draft { background: #f1f5f9; color: #64748b; }
+
+/* ─── Phase Content Tabs ─────────────────────────────────────────────────────── */
+
+.phase-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 16px;
+}
+
+.phase-tab {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.phase-tab:hover {
+  color: #334155;
+}
+
+.phase-tab--active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+  font-weight: 600;
+}
+
+/* ─── Development Progress ───────────────────────────────────────────────────── */
+
+.dev-steps {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.dev-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.dev-step--completed {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.dev-step--running {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.dev-step--error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.dev-step__icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.dev-step__name {
+  flex: 1;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.dev-step__detail {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* ─── Phase Layout ───────────────────────────────────────────────────────────── */
+
+.phase-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.phase-sidebar {
+  position: sticky;
+  top: 12px;
+}
+
+.phase-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-top: 16px;
+}
+
+.phase-actions textarea {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 60px;
+}
+
+/* ─── Comment Thread ─────────────────────────────────────────────────────────── */
+
+.comment-thread {
+  display: grid;
+  gap: 10px;
+}
+
+.comment-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.comment-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.comment-body {
+  flex: 1;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.comment-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.comment-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.comment-input-row textarea {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 60px;
+}
+
+/* ─── Mermaid Diagrams ───────────────────────────────────────────────────────── */
+
+.diagram-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  margin-bottom: 12px;
+}
+
+.diagram-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.diagram-card__content {
+  padding: 16px;
+  overflow-x: auto;
+}
+
+/* ─── Feature List ───────────────────────────────────────────────────────────── */
+
+.feature-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.1s, box-shadow 0.1s;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.feature-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 2px 8px rgba(37,99,235,0.08);
+}
+
+.feature-card__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 6px;
+}
+
+.feature-card__phase {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.feature-card__phase--architecture { background: #dbeafe; color: #1d4ed8; }
+.feature-card__phase--development  { background: #fef9c3; color: #a16207; }
+.feature-card__phase--testing      { background: #ede9fe; color: #7c3aed; }
+.feature-card__phase--completed    { background: #dcfce7; color: #15803d; }
+
+/* ─── SSE Log ────────────────────────────────────────────────────────────────── */
+
+.sse-log {
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
+.sse-log__line--error { color: #f87171; }
+.sse-log__line--done  { color: #4ade80; }
+.sse-log__line--status { color: #60a5fa; }
+
+@media (max-width: 1100px) {
+  .phase-layout {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { getProjectIndex, getProjectSettings } from '@/lib/api'
+import { getProjectIndex, getProjectSettings, listFeatures } from '@/lib/api'
 import { CheckReviewDialog } from '@/components/check-review-dialog'
+import { CreateFeatureDialog } from '@/components/create-feature-dialog'
 
 interface Props {
   params: { projectId: string }
@@ -15,6 +16,12 @@ export default async function ProjectDetailPage({ params }: Props) {
   } catch {
     index = null
   }
+  let features: Awaited<ReturnType<typeof listFeatures>> = []
+  try {
+    features = await listFeatures(projectId)
+  } catch {
+    features = []
+  }
 
   return (
     <div>
@@ -28,6 +35,7 @@ export default async function ProjectDetailPage({ params }: Props) {
           <form action={`/api/projects/${encodeURIComponent(projectId)}/initialize`} method="POST">
             <button className="btn primary" type="submit">Regenerate with AI</button>
           </form>
+          <Link className="btn ghost" href={`/projects/${encodeURIComponent(projectId)}/features`}>Features</Link>
           <Link className="btn ghost" href={`/projects/${encodeURIComponent(projectId)}/history`}>Review History</Link>
           <Link className="btn ghost" href={`/projects/${encodeURIComponent(projectId)}/settings`}>Settings</Link>
         </div>
@@ -112,6 +120,51 @@ export default async function ProjectDetailPage({ params }: Props) {
               <p className="muted" style={{ marginTop: 8 }}>
                 Use split-pane editing with live markdown preview and save/version tracking.
               </p>
+            </div>
+
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ margin: 0 }}>Features</h3>
+                <CreateFeatureDialog projectId={projectId} />
+              </div>
+              {features.length === 0 ? (
+                <p className="muted">No features yet. Create one to track Architecture → Development → Testing.</p>
+              ) : (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {features.map((f) => {
+                    const phaseColors: Record<string, string> = {
+                      architecture: '#dbeafe', development: '#fef9c3', testing: '#ede9fe', completed: '#dcfce7',
+                    }
+                    const phaseTextColors: Record<string, string> = {
+                      architecture: '#1d4ed8', development: '#a16207', testing: '#7c3aed', completed: '#15803d',
+                    }
+                    const phase = f.current_phase
+                    return (
+                      <Link
+                        key={f.id}
+                        href={`/projects/${encodeURIComponent(projectId)}/features/${f.id}/${phase === 'completed' ? 'testing' : phase}`}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '8px 10px', border: '1px solid #e2e8f0',
+                          borderRadius: 8, textDecoration: 'none', color: 'inherit',
+                        }}
+                      >
+                        <span style={{ flex: 1, fontWeight: 500 }}>{f.name}</span>
+                        <span style={{
+                          fontSize: 11, padding: '2px 8px', borderRadius: 999,
+                          background: phaseColors[phase] ?? '#f1f5f9',
+                          color: phaseTextColors[phase] ?? '#64748b',
+                        }}>
+                          {phase.charAt(0).toUpperCase() + phase.slice(1)}
+                        </span>
+                      </Link>
+                    )
+                  })}
+                  <Link className="btn ghost" href={`/projects/${encodeURIComponent(projectId)}/features`} style={{ textAlign: 'center', marginTop: 4 }}>
+                    View all features →
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
         </div>

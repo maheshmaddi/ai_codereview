@@ -78,6 +78,11 @@ export async function runCommand(
     'codereview-int-deep': 'codereview-init',
     'codereview': 'codereview-pr',
     'pushcomments': 'codereview-push',
+    'architecture-analyze': 'architecture-analyze',
+    'architecture-plan': 'architecture-plan',
+    'development-execute': 'development-execute',
+    'testing-plan': 'testing-plan',
+    'testing-execute': 'testing-execute',
   }
 
   const skillName = skillMap[command] || command
@@ -153,6 +158,11 @@ export async function runCommandInDir(
     'codereview-int-deep': 'codereview-init',
     'codereview': 'codereview-pr',
     'pushcomments': 'codereview-push',
+    'architecture-analyze': 'architecture-analyze',
+    'architecture-plan': 'architecture-plan',
+    'development-execute': 'development-execute',
+    'testing-plan': 'testing-plan',
+    'testing-execute': 'testing-execute',
   }
 
   const skillName = skillMap[command] || command
@@ -215,6 +225,11 @@ export async function runCommandInDirWithFallback(
     'codereview-int-deep': 'codereview-init',
     'codereview': 'codereview-pr',
     'pushcomments': 'codereview-push',
+    'architecture-analyze': 'architecture-analyze',
+    'architecture-plan': 'architecture-plan',
+    'development-execute': 'development-execute',
+    'testing-plan': 'testing-plan',
+    'testing-execute': 'testing-execute',
   }
 
   const skillName = skillMap[command] || command
