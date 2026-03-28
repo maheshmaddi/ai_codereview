@@ -76,7 +76,7 @@ fi
 echo ""
 echo "Checking OpenClaw skills..."
 
-REQUIRED_SKILLS=("codereview-init" "codereview-pr" "codereview-push")
+REQUIRED_SKILLS=("codereview-init" "codereview-pr" "codereview-push" "architecture-analyze" "architecture-plan" "development-execute" "testing-plan" "testing-execute")
 MISSING_SKILLS=()
 
 if [ -n "$OPENCLAW_CMD" ]; then
@@ -190,6 +190,11 @@ echo ""
 echo "Configuration:"
 echo "  - Edit server/.env for GitHub token and settings"
 echo "  - Set GITHUB_POLLING_ENABLED=true for polling mode"
+echo ""
+echo "Feature Lifecycle:"
+echo "  - Create features in Projects > Features"
+echo "  - Phases: Architecture → Development → Testing"
+echo "  - Upload requirements (PDF/DOCX/MD/TXT, max 5MB)"
 echo ""
 
 if [ ${#MISSING_SKILLS[@]} -gt 0 ]; then

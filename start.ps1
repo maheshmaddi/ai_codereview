@@ -79,7 +79,7 @@ if (-not $openclawCmd) {
 Write-Host ""
 Write-Host "Checking OpenClaw skills..." -ForegroundColor Cyan
 
-$requiredSkills = @("codereview-init", "codereview-pr", "codereview-push")
+$requiredSkills = @("codereview-init", "codereview-pr", "codereview-push", "architecture-analyze", "architecture-plan", "development-execute", "testing-plan", "testing-execute")
 $missingSkills = @()
 
 if ($openclawCmd) {
@@ -225,6 +225,11 @@ Write-Host ""
 Write-Host "Configuration:" -ForegroundColor Yellow
 Write-Host "  - Edit server/.env for GitHub token and settings" -ForegroundColor White
 Write-Host "  - Set GITHUB_POLLING_ENABLED=true for polling mode" -ForegroundColor White
+Write-Host ""
+Write-Host "Feature Lifecycle:" -ForegroundColor Yellow
+Write-Host "  - Create features in Projects > Features" -ForegroundColor White
+Write-Host "  - Phases: Architecture -> Development -> Testing" -ForegroundColor White
+Write-Host "  - Upload requirements (PDF/DOCX/MD/TXT, max 5MB)" -ForegroundColor White
 Write-Host ""
 
 if ($missingSkills.Count -gt 0) {
