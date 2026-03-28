@@ -55,25 +55,20 @@ export default function DevelopmentPage() {
   const addLog = (type: string, message: string) => setLogLines((prev) => [...prev, { type, message }])
 
   const loadData = useCallback(async () => {
-    try {
-      const enc = encodeURIComponent(projectId)
-      const [fRes, statusRes, summaryRes, commentsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}`),
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}/development/status`),
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}/development/summary`),
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}/comments?phase=development`),
-      ])
-      if (fRes.ok) setFeature(await fRes.json())
-      if (statusRes.ok) {
-        const data = await statusRes.json()
-        setSteps(data.steps ?? [])
-        setBranchName(data.branch_name)
-      }
-      if (summaryRes.ok) { const d = await summaryRes.json(); setSummary(d.summary) }
-      if (commentsRes.ok) setComments(await commentsRes.json())
-    } catch (err) {
-      console.error('Failed to load development data:', err)
+    const [fRes, statusRes, summaryRes, commentsRes] = await Promise.all([
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}`),
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}/development/status`),
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}/development/summary`),
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}/comments?phase=development`),
+    ])
+    if (fRes.ok) setFeature(await fRes.json())
+    if (statusRes.ok) {
+      const data = await statusRes.json()
+      setSteps(data.steps ?? [])
+      setBranchName(data.branch_name)
     }
+    if (summaryRes.ok) { const d = await summaryRes.json(); setSummary(d.summary) }
+    if (commentsRes.ok) setComments(await commentsRes.json())
   }, [projectId, featureId])
 
   useEffect(() => { loadData() }, [])

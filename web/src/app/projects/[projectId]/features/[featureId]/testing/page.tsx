@@ -54,25 +54,20 @@ export default function TestingPage() {
   const addLog = (type: string, message: string) => setLogLines((prev) => [...prev, { type, message }])
 
   const loadData = useCallback(async () => {
-    try {
-      const enc = encodeURIComponent(projectId)
-      const [fRes, revisionsRes, commentsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}`),
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}/testing/revisions`),
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}/comments?phase=testing`),
-      ])
-      if (fRes.ok) setFeature(await fRes.json())
-      if (revisionsRes.ok) {
-        const revs: PhaseRevisionSummary[] = await revisionsRes.json()
-        setRevisions(revs)
-        if (revs.length > 0 && activeVersion === null) {
-          setActiveVersion(revs[revs.length - 1].version)
-        }
+    const [fRes, revisionsRes, commentsRes] = await Promise.all([
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}`),
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}/testing/revisions`),
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}/comments?phase=testing`),
+    ])
+    if (fRes.ok) setFeature(await fRes.json())
+    if (revisionsRes.ok) {
+      const revs: PhaseRevisionSummary[] = await revisionsRes.json()
+      setRevisions(revs)
+      if (revs.length > 0 && activeVersion === null) {
+        setActiveVersion(revs[revs.length - 1].version)
       }
-      if (commentsRes.ok) setComments(await commentsRes.json())
-    } catch (err) {
-      console.error('Failed to load testing data:', err)
     }
+    if (commentsRes.ok) setComments(await commentsRes.json())
   }, [projectId, featureId, activeVersion])
 
   useEffect(() => { loadData() }, [])

@@ -61,30 +61,25 @@ export default function ArchitecturePage() {
   const addLog = (type: string, message: string) => setLogLines((prev) => [...prev, { type, message }])
 
   const loadFeature = useCallback(async () => {
-    try {
-      const enc = encodeURIComponent(projectId)
-      const [fRes, filesRes, questionsRes, revisionsRes, commentsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}`),
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}/uploaded-files`),
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}/architecture/questions`),
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}/architecture/revisions`),
-        fetch(`${API_BASE}/api/projects/${enc}/features/${featureId}/comments?phase=architecture`),
-      ])
-      if (fRes.ok) setFeature(await fRes.json())
-      if (filesRes.ok) setUploadedFiles(await filesRes.json())
-      if (questionsRes.ok) setQuestions(await questionsRes.json())
-      if (revisionsRes.ok) {
-        const revs: PhaseRevisionSummary[] = await revisionsRes.json()
-        setRevisions(revs)
-        if (revs.length > 0 && activeVersion === null) {
-          const latest = revs[revs.length - 1].version
-          setActiveVersion(latest)
-        }
+    const [fRes, filesRes, questionsRes, revisionsRes, commentsRes] = await Promise.all([
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}`),
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}/uploaded-files`),
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}/architecture/questions`),
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}/architecture/revisions`),
+      fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/features/${featureId}/comments?phase=architecture`),
+    ])
+    if (fRes.ok) setFeature(await fRes.json())
+    if (filesRes.ok) setUploadedFiles(await filesRes.json())
+    if (questionsRes.ok) setQuestions(await questionsRes.json())
+    if (revisionsRes.ok) {
+      const revs: PhaseRevisionSummary[] = await revisionsRes.json()
+      setRevisions(revs)
+      if (revs.length > 0 && activeVersion === null) {
+        const latest = revs[revs.length - 1].version
+        setActiveVersion(latest)
       }
-      if (commentsRes.ok) setComments(await commentsRes.json())
-    } catch (err) {
-      console.error('Failed to load feature data:', err)
     }
+    if (commentsRes.ok) setComments(await commentsRes.json())
   }, [projectId, featureId, activeVersion])
 
   useEffect(() => { loadFeature() }, [])
