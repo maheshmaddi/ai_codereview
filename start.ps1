@@ -77,36 +77,35 @@ if (-not $openclawCmd) {
 
 # --- Check for OpenClaw Skills ---
 Write-Host ""
-Write-Host "Checking OpenClaw skills..." -ForegroundColor Cyan
+Write-Host "Checking OpenClaw skills (local .opencode/commands/)..." -ForegroundColor Cyan
 
-$requiredSkills = @("codereview-init", "codereview-pr", "codereview-push", "architecture-analyze", "architecture-plan", "development-execute", "testing-plan", "testing-execute")
+$requiredSkills = @(
+    @{ name = "codereview-init"; file = "codereview-int-deep.md" },
+    @{ name = "codereview-pr"; file = "codereview.md" },
+    @{ name = "codereview-push"; file = "pushcomments.md" },
+    @{ name = "architecture-analyze"; file = "architecture-analyze.md" },
+    @{ name = "architecture-plan"; file = "architecture-plan.md" },
+    @{ name = "development-execute"; file = "development-execute.md" },
+    @{ name = "testing-plan"; file = "testing-plan.md" },
+    @{ name = "testing-execute"; file = "testing-execute.md" }
+)
 $missingSkills = @()
 
-if ($openclawCmd) {
-    foreach ($skill in $requiredSkills) {
-        try {
-            $skillCheck = & openclaw skills list 2>&1 | Select-String $skill
-            if ($skillCheck) {
-                Write-Host "[OK] Skill found: $skill" -ForegroundColor Green
-            } else {
-                $missingSkills += $skill
-            }
-        } catch {
-            $missingSkills += $skill
-        }
+$commandsDir = Join-Path $projectRoot ".opencode" "commands"
+foreach ($skill in $requiredSkills) {
+    $skillFile = Join-Path $commandsDir $skill.file
+    if (Test-Path $skillFile) {
+        Write-Host "[OK] Skill found: $($skill.name) ($($skill.file))" -ForegroundColor Green
+    } else {
+        $missingSkills += $skill.name
+        Write-Host "[MISS] Skill missing: $($skill.name) (expected: .opencode/commands/$($skill.file))" -ForegroundColor Yellow
     }
-    
-    if ($missingSkills.Count -gt 0) {
-        Write-Host ""
-        Write-Host "[WARN] Missing skills: $($missingSkills -join ', ')" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "Install missing skills:" -ForegroundColor Cyan
-        Write-Host "  /skill-creator `"$skill`"" -ForegroundColor White
-        Write-Host "  or" -ForegroundColor White
-        Write-Host "  /clawhub install $skill" -ForegroundColor White
-        Write-Host ""
-        Write-Host "See MIGRATION.md for skill creation instructions." -ForegroundColor Yellow
-    }
+}
+
+if ($missingSkills.Count -gt 0) {
+    Write-Host ""
+    Write-Host "[WARN] Missing skill files: $($missingSkills -join ', ')" -ForegroundColor Yellow
+    Write-Host "Create them in .opencode/commands/ - see MIGRATION.md for details." -ForegroundColor Yellow
 }
 
 # --- Setup .env files ---
@@ -218,7 +217,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Services Running:" -ForegroundColor Cyan
 Write-Host "  OpenClaw:    http://localhost:3000" -ForegroundColor White
 Write-Host "  API Server:  http://localhost:3001" -ForegroundColor White
-Write-Host "  Web UI:      http://localhost:3002" -ForegroundColor White
+Write-Host "  Web UI:      http://localhost:3002 (open this in browser)" -ForegroundColor White
 Write-Host "  Health:      http://localhost:3001/health" -ForegroundColor White
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
@@ -233,11 +232,11 @@ Write-Host "  - Upload requirements (PDF/DOCX/MD/TXT, max 5MB)" -ForegroundColor
 Write-Host ""
 
 if ($missingSkills.Count -gt 0) {
-    Write-Host "Missing Skills:" -ForegroundColor Yellow
+    Write-Host "Missing Skill Files:" -ForegroundColor Yellow
     foreach ($skill in $missingSkills) {
         Write-Host "  - $skill" -ForegroundColor White
     }
-    Write-Host "  Install with: /skill-creator or /clawhub install" -ForegroundColor White
+    Write-Host "  Create them in .opencode/commands/ - see MIGRATION.md" -ForegroundColor White
     Write-Host ""
 }
 

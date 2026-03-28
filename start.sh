@@ -72,33 +72,37 @@ else
     echo "[OK] OpenClaw CLI found: $(command -v openclaw)"
 fi
 
-# --- Check for OpenClaw Skills ---
+# --- Check for OpenClaw Skills (local .opencode/commands/) ---
 echo ""
-echo "Checking OpenClaw skills..."
+echo "Checking OpenClaw skills (local .opencode/commands/)..."
 
-REQUIRED_SKILLS=("codereview-init" "codereview-pr" "codereview-push" "architecture-analyze" "architecture-plan" "development-execute" "testing-plan" "testing-execute")
+declare -A SKILL_FILES=(
+    ["codereview-init"]="codereview-int-deep.md"
+    ["codereview-pr"]="codereview.md"
+    ["codereview-push"]="pushcomments.md"
+    ["architecture-analyze"]="architecture-analyze.md"
+    ["architecture-plan"]="architecture-plan.md"
+    ["development-execute"]="development-execute.md"
+    ["testing-plan"]="testing-plan.md"
+    ["testing-execute"]="testing-execute.md"
+)
 MISSING_SKILLS=()
 
-if [ -n "$OPENCLAW_CMD" ]; then
-    for skill in "${REQUIRED_SKILLS[@]}"; do
-        if openclaw skills list 2>/dev/null | grep -q "$skill"; then
-            echo "[OK] Skill found: $skill"
-        else
-            MISSING_SKILLS+=("$skill")
-        fi
-    done
-    
-    if [ ${#MISSING_SKILLS[@]} -gt 0 ]; then
-        echo ""
-        echo "[WARN] Missing skills: ${MISSING_SKILLS[*]}"
-        echo ""
-        echo "Install missing skills:"
-        echo "  /skill-creator \"$skill\""
-        echo "  or"
-        echo "  /clawhub install $skill"
-        echo ""
-        echo "See MIGRATION.md for skill creation instructions."
+COMMANDS_DIR="$PROJECT_ROOT/.opencode/commands"
+for skill in "${!SKILL_FILES[@]}"; do
+    file="${SKILL_FILES[$skill]}"
+    if [ -f "$COMMANDS_DIR/$file" ]; then
+        echo "[OK] Skill found: $skill ($file)"
+    else
+        MISSING_SKILLS+=("$skill")
+        echo "[MISS] Skill missing: $skill (expected: .opencode/commands/$file)"
     fi
+done
+
+if [ ${#MISSING_SKILLS[@]} -gt 0 ]; then
+    echo ""
+    echo "[WARN] Missing skill files: ${MISSING_SKILLS[*]}"
+    echo "Create them in .opencode/commands/ - see MIGRATION.md for details."
 fi
 
 # --- Setup .env files ---

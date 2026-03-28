@@ -20,11 +20,16 @@ This document describes the migration from OpenCode to OpenClaw for AI code revi
 
 ### Command Mapping
 
-| OpenCode Command | OpenClaw Skill | Description |
-|------------------|----------------|-------------|
-| `/codereview-int-deep` | `codereview-init` | Initialize project review guidelines |
-| `/codereview` | `codereview-pr` | Review a pull request |
-| `/pushcomments` | `codereview-push` | Post review comments to GitHub |
+| OpenCode Command | OpenClaw Skill | Local File | Description |
+|------------------|----------------|------------|-------------|
+| `/codereview-int-deep` | `codereview-init` | `.opencode/commands/codereview-int-deep.md` | Initialize project review guidelines |
+| `/codereview` | `codereview-pr` | `.opencode/commands/codereview.md` | Review a pull request |
+| `/pushcomments` | `codereview-push` | `.opencode/commands/pushcomments.md` | Post review comments to GitHub |
+| — | `architecture-analyze` | `.opencode/commands/architecture-analyze.md` | Analyze requirements and generate Q&A |
+| — | `architecture-plan` | `.opencode/commands/architecture-plan.md` | Generate architecture plan with diagrams |
+| — | `development-execute` | `.opencode/commands/development-execute.md` | Implement code changes from plan |
+| — | `testing-plan` | `.opencode/commands/testing-plan.md` | Generate test cases plan |
+| — | `testing-execute` | `.opencode/commands/testing-execute.md` | Write and push test code |
 
 ### Environment Variables
 
@@ -58,23 +63,25 @@ Update your `.env` file:
 OPENCLAW_SERVER_URL=http://localhost:3000
 ```
 
-### 3. Install OpenClaw Skills
+### 3. OpenClaw Skills
 
-The following OpenClaw skills need to be installed:
+Skills are defined as local markdown files in `.opencode/commands/`. They are bundled with the repository — **no separate installation needed**.
 
+Verify all skill files exist:
 ```bash
-# In OpenClaw
-/skill-creator "codereview-init - Initialize project review guidelines"
-/skill-creator "codereview-pr - Review a pull request"
-/skill-creator "codereview-push - Post review comments to GitHub"
+ls .opencode/commands/
+# Expected files:
+#   codereview-int-deep.md   (codereview-init)
+#   codereview.md            (codereview-pr)
+#   pushcomments.md          (codereview-push)
+#   architecture-analyze.md  (architecture-analyze)
+#   architecture-plan.md     (architecture-plan)
+#   development-execute.md   (development-execute)
+#   testing-plan.md          (testing-plan)
+#   testing-execute.md       (testing-execute)
 ```
 
-Alternatively, install from ClawHub (if available):
-```bash
-/clawhub install codereview-init
-/clawhub install codereview-pr
-/clawhub install codereview-push
-```
+The `start.sh` / `start.ps1` scripts automatically verify these files are present on startup.
 
 ### 4. Start the Server
 
