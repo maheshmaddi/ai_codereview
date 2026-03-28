@@ -42,7 +42,11 @@ echo "[OK] Node.js $NODE_VERSION"
 echo ""
 echo "Checking OpenClaw installation..."
 
-if ! command -v openclaw &> /dev/null; then
+OPENCLAW_CMD=""
+if command -v openclaw &> /dev/null; then
+    OPENCLAW_CMD="openclaw"
+    echo "[OK] OpenClaw CLI found: $(command -v openclaw)"
+else
     echo "[WARN] OpenClaw CLI not found in PATH"
     echo ""
     echo "OpenClaw is required for AI code review features."
@@ -57,47 +61,90 @@ if ! command -v openclaw &> /dev/null; then
     echo ""
     echo "  3. Continue without OpenClaw (limited functionality)"
     echo ""
-    
+
     read -p "Continue without OpenClaw? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo "[INFO] Please install OpenClaw and run this script again."
         exit 0
     fi
-    
+
     echo "[WARN] Continuing without OpenClaw - AI features will not work"
-    OPENCLAW_CMD=""
-else
-    OPENCLAW_CMD="openclaw"
-    echo "[OK] OpenClaw CLI found: $(command -v openclaw)"
+fi
+
+# --- Get OpenClaw gateway port ---
+GATEWAY_PORT=18789
+if [ -n "$OPENCLAW_CMD" ]; then
+    PORT_CONFIG=$(openclaw config get gateway.port 2>/dev/null || echo "")
+    if echo "$PORT_CONFIG" | grep -qE '^[0-9]+$'; then
+        GATEWAY_PORT=$(echo "$PORT_CONFIG" | grep -oE '[0-9]+')
+    fi
+    echo "[OK] OpenClaw gateway port: $GATEWAY_PORT"
+fi
+
+# --- Check / Start OpenClaw Gateway ---
+if [ -n "$OPENCLAW_CMD" ]; then
+    echo ""
+    echo "Checking OpenClaw gateway..."
+
+    GATEWAY_RUNNING=false
+    if curl -sf "http://localhost:$GATEWAY_PORT/health" > /dev/null 2>&1; then
+        GATEWAY_RUNNING=true
+    fi
+
+    if $GATEWAY_RUNNING; then
+        echo "[OK] OpenClaw gateway already running (port $GATEWAY_PORT)"
+    else
+        echo "[STARTING] OpenClaw gateway..."
+        openclaw gateway start &
+        OPENCLAW_PID=$!
+
+        # Wait for gateway to come up (up to 15 seconds)
+        MAX_WAIT=15
+        WAITED=0
+        while [ $WAITED -lt $MAX_WAIT ]; do
+            sleep 1
+            WAITED=$((WAITED + 1))
+            if curl -sf "http://localhost:$GATEWAY_PORT/health" > /dev/null 2>&1; then
+                GATEWAY_RUNNING=true
+                break
+            fi
+            echo "  Waiting... ($WAITED/$MAX_WAIT)"
+        done
+
+        if $GATEWAY_RUNNING; then
+            echo "[OK] OpenClaw gateway started (port $GATEWAY_PORT)"
+        else
+            echo "[WARN] OpenClaw gateway did not start within ${MAX_WAIT}s - continuing anyway"
+        fi
+    fi
 fi
 
 # --- Check for OpenClaw Skills ---
 echo ""
 echo "Checking OpenClaw skills..."
 
-REQUIRED_SKILLS=("codereview-init" "codereview-pr" "codereview-push")
+REQUIRED_SKILLS=("codereview-int-deep" "codereview" "pushcomments")
 MISSING_SKILLS=()
 
 if [ -n "$OPENCLAW_CMD" ]; then
+    SKILLS_LIST=$(openclaw skills list 2>/dev/null || echo "")
+
     for skill in "${REQUIRED_SKILLS[@]}"; do
-        if openclaw skills list 2>/dev/null | grep -q "$skill"; then
+        if echo "$SKILLS_LIST" | grep -q "$skill"; then
             echo "[OK] Skill found: $skill"
         else
             MISSING_SKILLS+=("$skill")
         fi
     done
-    
+
     if [ ${#MISSING_SKILLS[@]} -gt 0 ]; then
         echo ""
         echo "[WARN] Missing skills: ${MISSING_SKILLS[*]}"
         echo ""
-        echo "Install missing skills:"
-        echo "  /skill-creator \"$skill\""
-        echo "  or"
-        echo "  /clawhub install $skill"
+        echo "Skills are located in: ~/.openclaw/workspace/skills/"
+        echo "Each skill needs a SKILL.md file in its own subdirectory."
         echo ""
-        echo "See MIGRATION.md for skill creation instructions."
     fi
 fi
 
@@ -107,7 +154,7 @@ if [ ! -f "$PROJECT_ROOT/server/.env" ]; then
         cp "$PROJECT_ROOT/server/.env.example" "$PROJECT_ROOT/server/.env"
         echo "[SETUP] Created server/.env from .env.example"
         echo "[ACTION] Please edit server/.env with your settings:"
-        echo "  - OPENCLAW_SERVER_URL (default: http://localhost:3000)"
+        echo "  - OPENCLAW_SERVER_URL (default: http://localhost:$GATEWAY_PORT)"
         echo "  - GITHUB_TOKEN (your GitHub PAT)"
         echo "  - GITHUB_WEBHOOK_SECRET (if using webhooks)"
     fi
@@ -152,27 +199,12 @@ trap cleanup SIGINT SIGTERM
 echo ""
 echo "Starting services..."
 
-# Start OpenClaw if installed
-if [ -n "$OPENCLAW_CMD" ]; then
-    # Check if OpenClaw is already running
-    if curl -s http://localhost:3000/status > /dev/null 2>&1; then
-        echo "[OK] OpenClaw already running (port 3000)"
-    else
-        openclaw gateway start &
-        PIDS+=($!)
-        echo "[STARTED] OpenClaw server (port 3000)"
-        echo "Waiting for OpenClaw to initialize (5s)..."
-        sleep 5
-        echo "[OK] Continuing startup"
-    fi
-else
-    echo "[SKIPPED] OpenClaw not installed - AI features disabled"
-fi
-
+# Start server in background
 cd "$PROJECT_ROOT/server" && npm run dev &
 PIDS+=($!)
 echo "[STARTED] Backend API server (port 3001)"
 
+# Start web in background
 cd "$PROJECT_ROOT/web" && npm run dev &
 PIDS+=($!)
 echo "[STARTED] Web UI (port 3002)"
@@ -181,7 +213,7 @@ echo "[STARTED] Web UI (port 3002)"
 echo ""
 echo "========================================"
 echo "  Services Running:"
-echo "  OpenClaw:    http://localhost:3000"
+echo "  OpenClaw:    http://localhost:$GATEWAY_PORT"
 echo "  API Server:  http://localhost:3001"
 echo "  Web UI:      http://localhost:3002"
 echo "  Health:      http://localhost:3001/health"
@@ -197,7 +229,7 @@ if [ ${#MISSING_SKILLS[@]} -gt 0 ]; then
     for skill in "${MISSING_SKILLS[@]}"; do
         echo "  - $skill"
     done
-    echo "  Install with: /skill-creator or /clawhub install"
+    echo "  Skills directory: ~/.openclaw/workspace/skills/"
     echo ""
 fi
 

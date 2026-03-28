@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { getProjectIndex, getProjectSettings } from '@/lib/api'
 import { CheckReviewDialog } from '@/components/check-review-dialog'
+import { Layers } from 'lucide-react'
 
 interface Props {
   params: { projectId: string }
@@ -30,6 +31,9 @@ export default async function ProjectDetailPage({ params }: Props) {
           </form>
           <Link className="btn ghost" href={`/projects/${encodeURIComponent(projectId)}/history`}>Review History</Link>
           <Link className="btn ghost" href={`/projects/${encodeURIComponent(projectId)}/settings`}>Settings</Link>
+          <Link className="btn primary" href={`/projects/${encodeURIComponent(projectId)}/features`}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Layers size={16} /> Features</span>
+          </Link>
         </div>
       </div>
 

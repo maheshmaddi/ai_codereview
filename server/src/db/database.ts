@@ -187,6 +187,89 @@ export async function initDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_reviews_reviewed_at ON reviews(reviewed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_doc_versions_project_module ON document_versions(project_id, module_name);
     CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
+
+    -- Feature lifecycle tracking
+    CREATE TABLE IF NOT EXISTS feature_phases (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      current_phase TEXT NOT NULL DEFAULT 'architecture'
+        CHECK (current_phase IN ('architecture', 'development', 'testing', 'completed')),
+      requirement_file TEXT,
+      branch_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Architecture/Testing plan revisions
+    CREATE TABLE IF NOT EXISTS phase_revisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      feature_id TEXT NOT NULL REFERENCES feature_phases(id) ON DELETE CASCADE,
+      phase TEXT NOT NULL CHECK (phase IN ('architecture', 'testing')),
+      version INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      diagrams TEXT,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'pending_review', 'revision_requested', 'approved')),
+      architect_comments TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Q&A between LLM and user (architecture phase)
+    CREATE TABLE IF NOT EXISTS phase_questions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      feature_id TEXT NOT NULL REFERENCES feature_phases(id) ON DELETE CASCADE,
+      phase TEXT NOT NULL DEFAULT 'architecture',
+      question TEXT NOT NULL,
+      answer TEXT,
+      is_highlighted INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      answered_at TEXT
+    );
+
+    -- Comments on any phase
+    CREATE TABLE IF NOT EXISTS phase_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      feature_id TEXT NOT NULL REFERENCES feature_phases(id) ON DELETE CASCADE,
+      phase TEXT NOT NULL CHECK (phase IN ('architecture', 'development', 'testing')),
+      revision_version INTEGER,
+      author TEXT NOT NULL DEFAULT 'user',
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Development phase progress tracking
+    CREATE TABLE IF NOT EXISTS development_steps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      feature_id TEXT NOT NULL REFERENCES feature_phases(id) ON DELETE CASCADE,
+      step_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'running', 'completed', 'error')),
+      detail TEXT,
+      change_summary TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+
+    -- File uploads (requirement documents)
+    CREATE TABLE IF NOT EXISTS uploaded_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      feature_id TEXT NOT NULL REFERENCES feature_phases(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      mime_type TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Feature-related indexes
+    CREATE INDEX IF NOT EXISTS idx_feature_phases_project ON feature_phases(project_id);
+    CREATE INDEX IF NOT EXISTS idx_phase_revisions_feature ON phase_revisions(feature_id, phase);
+    CREATE INDEX IF NOT EXISTS idx_phase_questions_feature ON phase_questions(feature_id);
+    CREATE INDEX IF NOT EXISTS idx_phase_comments_feature ON phase_comments(feature_id, phase);
+    CREATE INDEX IF NOT EXISTS idx_dev_steps_feature ON development_steps(feature_id);
+    CREATE INDEX IF NOT EXISTS idx_uploaded_files_feature ON uploaded_files(feature_id);
   `)
 
   console.log(`Database initialized at ${DB_PATH}`)

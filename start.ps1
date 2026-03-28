@@ -63,49 +63,111 @@ if (-not $openclawCmd) {
     Write-Host ""
     Write-Host "  3. Continue without OpenClaw (limited functionality)" -ForegroundColor White
     Write-Host ""
-    
+
     $response = Read-Host "Continue without OpenClaw? (y/N)"
     if ($response -ne 'y' -and $response -ne 'Y') {
         Write-Host "[INFO] Please install OpenClaw and run this script again." -ForegroundColor Yellow
         exit 0
     }
-    
+
     Write-Host "[WARN] Continuing without OpenClaw - AI features will not work" -ForegroundColor Yellow
 } else {
     Write-Host "[OK] OpenClaw CLI found: $openclawCmd" -ForegroundColor Green
+}
+
+# --- Get OpenClaw gateway port ---
+$gatewayPort = 18789
+if ($openclawCmd) {
+    try {
+        $portConfig = (cmd /c "openclaw config get gateway.port 2>nul" 2>$null | Out-String).Trim()
+        if ($portConfig -match '^\d+$') {
+            $gatewayPort = [int]$portConfig
+        } elseif ($portConfig -match '"(\d+)"') {
+            $gatewayPort = [int]$Matches[1]
+        }
+    } catch {}
+    Write-Host "[OK] OpenClaw gateway port: $gatewayPort" -ForegroundColor Green
+}
+
+# --- Check / Start OpenClaw Gateway ---
+$openclawJob = $null
+if ($openclawCmd) {
+    Write-Host ""
+    Write-Host "Checking OpenClaw gateway..." -ForegroundColor Cyan
+
+    $gatewayRunning = $false
+    try {
+        $healthCheck = Invoke-WebRequest -Uri "http://localhost:$gatewayPort/health" -TimeoutSec 3 -UseBasicParsing -ErrorAction SilentlyContinue
+        if ($healthCheck.StatusCode -eq 200) {
+            $gatewayRunning = $true
+        }
+    } catch {}
+
+    if ($gatewayRunning) {
+        Write-Host "[OK] OpenClaw gateway already running (port $gatewayPort)" -ForegroundColor Green
+    } else {
+        Write-Host "[STARTING] OpenClaw gateway..." -ForegroundColor Yellow
+        $savedPref2 = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $openclawJob = Start-Job -ScriptBlock {
+            & $using:openclawCmd gateway start 2>&1
+        }
+        $ErrorActionPreference = $savedPref2
+
+        # Wait for gateway to come up (up to 15 seconds)
+        $maxWait = 15
+        $waited = 0
+        while ($waited -lt $maxWait) {
+            Start-Sleep -Seconds 1
+            $waited++
+            try {
+                $check = Invoke-WebRequest -Uri "http://localhost:$using:gatewayPort/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+                if ($check.StatusCode -eq 200) {
+                    $gatewayRunning = $true
+                    break
+                }
+            } catch {}
+            Write-Host "  Waiting... ($waited/$maxWait)" -ForegroundColor Gray
+        }
+
+        if ($gatewayRunning) {
+            Write-Host "[OK] OpenClaw gateway started (port $gatewayPort)" -ForegroundColor Green
+        } else {
+            Write-Host "[WARN] OpenClaw gateway did not start within ${maxWait}s - continuing anyway" -ForegroundColor Yellow
+        }
+    }
 }
 
 # --- Check for OpenClaw Skills ---
 Write-Host ""
 Write-Host "Checking OpenClaw skills..." -ForegroundColor Cyan
 
-$requiredSkills = @("codereview-init", "codereview-pr", "codereview-push")
+$requiredSkills = @("codereview-int-deep", "codereview", "pushcomments",
+    "architecture-analyze", "architecture-plan", "development-execute",
+    "testing-plan", "testing-execute")
 $missingSkills = @()
 
 if ($openclawCmd) {
+    $savedPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $skillsList = (cmd /c "openclaw skills list 2>nul" 2>$null | Out-String)
+    $ErrorActionPreference = $savedPref
+
     foreach ($skill in $requiredSkills) {
-        try {
-            $skillCheck = & openclaw skills list 2>&1 | Select-String $skill
-            if ($skillCheck) {
-                Write-Host "[OK] Skill found: $skill" -ForegroundColor Green
-            } else {
-                $missingSkills += $skill
-            }
-        } catch {
+        if ($skillsList -match [regex]::Escape($skill)) {
+            Write-Host "[OK] Skill found: $skill" -ForegroundColor Green
+        } else {
             $missingSkills += $skill
         }
     }
-    
+
     if ($missingSkills.Count -gt 0) {
         Write-Host ""
         Write-Host "[WARN] Missing skills: $($missingSkills -join ', ')" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "Install missing skills:" -ForegroundColor Cyan
-        Write-Host "  /skill-creator `"$skill`"" -ForegroundColor White
-        Write-Host "  or" -ForegroundColor White
-        Write-Host "  /clawhub install $skill" -ForegroundColor White
+        Write-Host "Skills are located in: ~/.openclaw/workspace/skills/" -ForegroundColor Cyan
+        Write-Host "Each skill needs a SKILL.md file in its own subdirectory." -ForegroundColor White
         Write-Host ""
-        Write-Host "See MIGRATION.md for skill creation instructions." -ForegroundColor Yellow
     }
 }
 
@@ -120,7 +182,7 @@ if (-not (Test-Path $serverEnv)) {
         Copy-Item $serverEnvExample $serverEnv
         Write-Host '[SETUP] Created server/.env from .env.example' -ForegroundColor Yellow
         Write-Host '[ACTION] Please edit server/.env with your settings:' -ForegroundColor Yellow
-        Write-Host '  - OPENCLAW_SERVER_URL (default: http://localhost:3000)' -ForegroundColor White
+        Write-Host "  - OPENCLAW_SERVER_URL (default: http://localhost:$gatewayPort)" -ForegroundColor White
         Write-Host '  - GITHUB_TOKEN (your GitHub PAT)' -ForegroundColor White
         Write-Host '  - GITHUB_WEBHOOK_SECRET (if using webhooks)' -ForegroundColor White
     } else {
@@ -169,33 +231,6 @@ Write-Host "[OK] Web dependencies installed" -ForegroundColor Green
 Write-Host ""
 Write-Host "Starting services..." -ForegroundColor Cyan
 
-# Start OpenClaw server in background (if installed)
-$openclawJob = $null
-if ($openclawCmd) {
-    # Check if OpenClaw is already running
-    $openclawRunning = $false
-    try {
-        $healthCheck = Invoke-WebRequest -Uri "http://localhost:3000/status" -TimeoutSec 2 -ErrorAction SilentlyContinue
-        if ($healthCheck.StatusCode -eq 200) {
-            $openclawRunning = $true
-        }
-    } catch {}
-    
-    if ($openclawRunning) {
-        Write-Host "[OK] OpenClaw already running (port 3000)" -ForegroundColor Green
-    } else {
-        $openclawJob = Start-Job -ScriptBlock {
-            & $using:openclawCmd gateway start 2>&1
-        }
-        Write-Host "[STARTED] OpenClaw server (port 3000)" -ForegroundColor Green
-        Write-Host "Waiting for OpenClaw to initialize (5s)..." -ForegroundColor Cyan
-        Start-Sleep -Seconds 5
-        Write-Host "[OK] Continuing startup" -ForegroundColor Green
-    }
-} else {
-    Write-Host "[SKIPPED] OpenClaw not installed - AI features disabled" -ForegroundColor Yellow
-}
-
 # Start server in background
 $serverJob = Start-Job -ScriptBlock {
     Set-Location $using:projectRoot
@@ -216,7 +251,7 @@ Write-Host "[STARTED] Web UI (port 3002)" -ForegroundColor Green
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Services Running:" -ForegroundColor Cyan
-Write-Host "  OpenClaw:    http://localhost:3000" -ForegroundColor White
+Write-Host "  OpenClaw:    http://localhost:$gatewayPort" -ForegroundColor White
 Write-Host "  API Server:  http://localhost:3001" -ForegroundColor White
 Write-Host "  Web UI:      http://localhost:3002" -ForegroundColor White
 Write-Host "  Health:      http://localhost:3001/health" -ForegroundColor White
@@ -232,7 +267,7 @@ if ($missingSkills.Count -gt 0) {
     foreach ($skill in $missingSkills) {
         Write-Host "  - $skill" -ForegroundColor White
     }
-    Write-Host "  Install with: /skill-creator or /clawhub install" -ForegroundColor White
+    Write-Host "  Skills directory: ~/.openclaw/workspace/skills/" -ForegroundColor White
     Write-Host ""
 }
 
@@ -244,7 +279,7 @@ try {
     while ($true) {
         # Check if jobs are still running
         if ($openclawJob -and $openclawJob.State -eq 'Failed') {
-            Write-Host "[ERROR] OpenClaw server crashed. Logs:" -ForegroundColor Red
+            Write-Host "[ERROR] OpenClaw gateway crashed. Logs:" -ForegroundColor Red
             Receive-Job -Id $openclawJob.Id
         }
         $serverState = (Get-Job -Id $serverJob.Id).State
@@ -263,7 +298,7 @@ try {
 } finally {
     Write-Host ""
     Write-Host "Stopping services..." -ForegroundColor Yellow
-    # Stop OpenClaw job
+    # Stop OpenClaw gateway
     if ($openclawJob) {
         Stop-Job -Id $openclawJob.Id -ErrorAction SilentlyContinue
         Remove-Job -Id $openclawJob.Id -Force -ErrorAction SilentlyContinue

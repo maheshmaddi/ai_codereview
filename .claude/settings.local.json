@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/react_apps/ai_codereview/server/**)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(mkdir -p \"/c/react_apps/ai_codereview/web/src/app/projects/[projectId]/features/[featureId]/architecture\")",
+      "Bash(mkdir -p \"/c/react_apps/ai_codereview/web/src/app/projects/[projectId]/features/[featureId]/development\")",
+      "Bash(mkdir -p \"/c/react_apps/ai_codereview/web/src/app/projects/[projectId]/features/[featureId]/testing\")",
+      "Read(//c/react_apps/ai_codereview/**)",
+      "Bash(where openclaw:*)",
+      "Bash(openclaw --help)",
+      "Bash(openclaw skills:*)",
+      "Bash(openclaw config:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in d.items\\(\\) if ''''skill'''' in k.lower\\(\\)}, indent=2\\)\\)\")",
+      "Read(//c/Users/Mahesh/.openclaw/**)",
+      "Bash(mkdir -p ~/.openclaw/workspace/skills/codereview-int-deep)",
+      "Bash(mkdir -p ~/.openclaw/workspace/skills/codereview)",
+      "Bash(mkdir -p ~/.openclaw/workspace/skills/pushcomments)",
+      "Bash(mkdir -p ~/.openclaw/workspace/skills/architecture-analyze)",
+      "Bash(mkdir -p ~/.openclaw/workspace/skills/architecture-plan)",
+      "Bash(curl:*)",
+      "Bash(openclaw health:*)",
+      "Bash(openclaw gateway:*)",
+      "Bash(openclaw sessions:*)",
+      "Bash(openclaw agent:*)",
+      "Bash(OPENCLAW_GATEWAY_URL=http://localhost:18789 openclaw skills list)",
+      "Bash(openclaw agents:*)",
+      "Bash(openclaw --version)",
+      "Bash(node:*)"
+    ]
+  }
+}

@@ -6,7 +6,7 @@
 import axios from 'axios'
 import { getGlobalSetting } from '../db/database.js'
 
-const OPENCLAW_BASE_URL = process.env.OPENCLAW_SERVER_URL ?? 'http://localhost:3000'
+const OPENCLAW_BASE_URL = process.env.OPENCLAW_SERVER_URL ?? 'http://localhost:18789'
 
 /**
  * OpenClaw API client
@@ -75,9 +75,14 @@ export async function runCommand(
 
   // Map OpenCode commands to OpenClaw skills
   const skillMap: Record<string, string> = {
-    'codereview-int-deep': 'codereview-init',
-    'codereview': 'codereview-pr',
-    'pushcomments': 'codereview-push',
+    'codereview-int-deep': 'codereview-int-deep',
+    'codereview': 'codereview',
+    'pushcomments': 'pushcomments',
+    'architecture-analyze': 'architecture-analyze',
+    'architecture-plan': 'architecture-plan',
+    'development-execute': 'development-execute',
+    'testing-plan': 'testing-plan',
+    'testing-execute': 'testing-execute',
   }
 
   const skillName = skillMap[command] || command
@@ -150,9 +155,14 @@ export async function runCommandInDir(
 
   // Map OpenCode commands to OpenClaw skills
   const skillMap: Record<string, string> = {
-    'codereview-int-deep': 'codereview-init',
-    'codereview': 'codereview-pr',
-    'pushcomments': 'codereview-push',
+    'codereview-int-deep': 'codereview-int-deep',
+    'codereview': 'codereview',
+    'pushcomments': 'pushcomments',
+    'architecture-analyze': 'architecture-analyze',
+    'architecture-plan': 'architecture-plan',
+    'development-execute': 'development-execute',
+    'testing-plan': 'testing-plan',
+    'testing-execute': 'testing-execute',
   }
 
   const skillName = skillMap[command] || command
@@ -184,12 +194,11 @@ export async function runCommandInDir(
 
 export type RunResult =
   | { mode: 'api'; sessionId: string }
-  | { mode: 'cli'; exitCode: number }
+  | { mode: 'cli'; exitCode: number; rawOutput: string }
 
 /**
- * Try API first, fall back to openclaw CLI if API is unavailable.
- * onOutput is called with each line of CLI output (CLI mode only).
- * Returns { mode: 'api', sessionId } or { mode: 'cli', exitCode }.
+ * Run an OpenClaw skill via the CLI (openclaw agent).
+ * onOutput is called with each line of output.
  */
 export async function runCommandInDirWithFallback(
   command: string,
@@ -197,52 +206,69 @@ export async function runCommandInDirWithFallback(
   onOutput: (line: string) => void,
   args?: string
 ): Promise<RunResult> {
-  // --- Try API first ---
+  // --- Try REST API first ---
   try {
     const sessionId = await runCommandInDir(command, directory, args)
     return { mode: 'api', sessionId }
   } catch (apiErr) {
     const apiMsg = (apiErr as Error).message
     console.warn(`API failed (${apiMsg}), falling back to openclaw CLI`)
-    onOutput(`[fallback] API unavailable (${apiMsg}), using openclaw CLI...`)
+    onOutput(`[fallback] API unavailable, using openclaw CLI...`)
   }
 
-  // --- CLI fallback ---
+  // --- CLI fallback via openclaw agent ---
   const { spawn } = await import('child_process')
+  const path = await import('path')
+  const os = await import('os')
+  const fs = await import('fs')
 
-  // openclaw run --skill <skill> --cwd <directory>
-  const skillMap: Record<string, string> = {
-    'codereview-int-deep': 'codereview-init',
-    'codereview': 'codereview-pr',
-    'pushcomments': 'codereview-push',
+  // Write args to a temp file to avoid shell escaping issues with JSON
+  let message = `/${command}`
+  if (args) {
+    const tmpFile = path.join(os.tmpdir(), `openclaw-args-${Date.now()}.json`)
+    fs.writeFileSync(tmpFile, args, 'utf-8')
+    message = `/${command} --args-file ${tmpFile}`
   }
 
-  const skillName = skillMap[command] || command
-  const cliArgs = ['run', '--skill', skillName, '--cwd', directory]
-  if (args) cliArgs.push('--args', args)
+  onOutput(`[cli] Running skill: ${command}...`)
+
+  // Build command as a single string to avoid arg-splitting issues with shell:true
+  const cmdStr = [
+    'openclaw',
+    'agent',
+    '--agent', 'main',
+    '--message', `"${message.replace(/"/g, '\\"')}"`,
+    '--local',
+    '--json',
+    '--timeout', '600',
+  ].join(' ')
+
+  let rawOutput = ''
 
   const exitCode = await new Promise<number>((resolve, reject) => {
-    const proc = spawn(
-      'openclaw',
-      cliArgs,
-      {
-        cwd: directory,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: true,
-      }
-    )
+    const proc = spawn(cmdStr, [], {
+      cwd: directory,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: true,
+      env: { ...process.env },
+      windowsHide: true,
+    })
 
     proc.stdout.on('data', (chunk: Buffer) => {
-      chunk.toString().split('\n').forEach((line) => {
+      const text = chunk.toString()
+      rawOutput += text
+      text.split('\n').forEach((line) => {
         const trimmed = line.trim()
-        if (trimmed) onOutput(`[cli] ${trimmed}`)
+        if (trimmed) onOutput(trimmed)
       })
     })
 
     proc.stderr.on('data', (chunk: Buffer) => {
       chunk.toString().split('\n').forEach((line) => {
         const trimmed = line.trim()
-        if (trimmed) onOutput(`[cli] ${trimmed}`)
+        if (trimmed && !trimmed.includes('Doctor warnings')) {
+          onOutput(`[cli:warn] ${trimmed}`)
+        }
       })
     })
 
@@ -250,7 +276,7 @@ export async function runCommandInDirWithFallback(
     proc.on('error', reject)
   })
 
-  return { mode: 'cli', exitCode }
+  return { mode: 'cli', exitCode, rawOutput }
 }
 
 
