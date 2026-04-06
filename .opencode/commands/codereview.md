@@ -10,9 +10,14 @@ If repository is not provided, detect from: `!`git remote get-url origin``
 
 ## Step 1: Prepare the environment
 
-Get the PR branch name:
+Get the PR information:
 ```
-!`gh pr view {pr_number} --json headRefName,baseRefName,title,body --jq '{branch: .headRefName, base: .baseRefName, title: .title}'`
+!`webfetch https://api.github.com/repos/{repository}/pulls/{pr_number} --format markdown`
+```
+
+Extract branch information from the response (headRefName and baseRefName):
+```
+Parse the response to get headRefName (PR branch) and baseRefName (base branch)
 ```
 
 Run post-clone setup scripts if a `settings.json` exists in the project store:
@@ -115,3 +120,8 @@ After generating the review output, call:
 ```
 
 Output the path to the generated review files on completion.
+
+**Important**: This step MUST execute. After posting, output:
+```
+Review complete: https://github.com/{repository}/pull/{pr_number}
+```

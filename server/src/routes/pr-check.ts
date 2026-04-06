@@ -475,6 +475,45 @@ async function runReviewCLIWithStream(
 
     sendEvent('status', { message: `[PR #${prNumber}] CLI completed with exit code ${exitCode}` })
 
+    // Step 3: Call pushcomments after review completes
+    if (exitCode === 0) {
+      sendEvent('status', { message: `[PR #${prNumber}] Posting comments to GitHub PR...` })
+      try {
+        const pushCommentsArgs = ['run', '--command', 'pushcomments', '--dir', tempDir, `${prNumber}`]
+        const pushProc = spawn('opencode', pushCommentsArgs, {
+          cwd: tempDir,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: true,
+        })
+
+        pushProc.stdout.on('data', (chunk: Buffer) => {
+          const lines = chunk.toString().split('\n')
+          lines.forEach((line) => {
+            const trimmed = line.trim()
+            if (trimmed) {
+              sendEvent('cli_output', { pr_number: prNumber, message: `[pushcomments] ${trimmed}` })
+            }
+          })
+        })
+
+        pushProc.stderr.on('data', (chunk: Buffer) => {
+          const lines = chunk.toString().split('\n')
+          lines.forEach((line) => {
+            const trimmed = line.trim()
+            if (trimmed) {
+              sendEvent('cli_output', { pr_number: prNumber, message: `[pushcomments stderr] ${trimmed}` })
+            }
+          })
+        })
+
+        await new Promise((resolve) => pushProc.on('close', resolve))
+        sendEvent('status', { message: `[PR #${prNumber}] Successfully posted review comments to GitHub PR #${prNumber}` })
+      } catch (pushErr) {
+        console.error(`[Review CLI] Failed to post comments for PR #${prNumber}:`, pushErr)
+        sendEvent('status', { message: `[PR #${prNumber}] WARNING: Failed to post comments to GitHub PR` })
+      }
+    }
+
     // Step 3: Remove the trigger label if review was successful
     if (exitCode === 0) {
       try {
@@ -549,7 +588,7 @@ async function runReviewCLIBackground(
     // Step 2: Run the codereview command using CLI
     const exitCode = await new Promise<number>((resolve, reject) => {
       const cliArgs = ['run', '--command', 'codereview', '--dir', tempDir, `${prNumber} ${owner}/${repo}`]
-      
+
       console.log(`[Review CLI] Executing: opencode ${cliArgs.join(' ')}`)
 
       const proc = spawn('opencode', cliArgs, {
@@ -581,6 +620,37 @@ async function runReviewCLIBackground(
         reject(err)
       })
     })
+
+    // Step 3: Call pushcomments after review completes
+    if (exitCode === 0) {
+      console.log(`[Review CLI] Posting comments to GitHub PR #${prNumber}...`)
+      try {
+        const pushCommentsArgs = ['run', '--command', 'pushcomments', '--dir', tempDir, `${prNumber}`]
+        const pushProc = spawn('opencode', pushCommentsArgs, {
+          cwd: tempDir,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: true,
+        })
+
+        let pushStdout = ''
+        let pushStderr = ''
+
+        pushProc.stdout.on('data', (chunk: Buffer) => {
+          pushStdout += chunk.toString()
+          console.log(`[Review CLI pushcomments stdout] ${chunk.toString().trim()}`)
+        })
+
+        pushProc.stderr.on('data', (chunk: Buffer) => {
+          pushStderr += chunk.toString()
+          console.log(`[Review CLI pushcomments stderr] ${chunk.toString().trim()}`)
+        })
+
+        await new Promise((resolve) => pushProc.on('close', resolve))
+        console.log(`[Review CLI] Successfully posted comments for PR #${prNumber}`)
+      } catch (pushErr) {
+        console.error(`[Review CLI] Failed to post comments for PR #${prNumber}:`, pushErr)
+      }
+    }
 
     // Update session status
     if (exitCode === 0) {
