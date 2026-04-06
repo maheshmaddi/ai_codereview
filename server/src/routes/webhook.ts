@@ -6,7 +6,7 @@
 import { Router } from 'express'
 import crypto from 'crypto'
 import { getDb } from '../db/database.js'
-import { runCommand } from '../lib/opencode-client.js'
+import { runCommand, getSessionStatus } from '../lib/opencode-client.js'
 import { remoteToStorePath } from '../lib/store.js'
 
 export const webhookRouter = Router()
@@ -99,6 +99,38 @@ webhookRouter.post('/github', express_raw_body_middleware, async (req, res) => {
     ).run(reviewId, project.id, pr.number, pr.title, pr.html_url, pr.base.repo.full_name, `pending-${sessionId}`)
 
     console.log(`Webhook: Review session ${sessionId} started for PR #${pr.number}`)
+
+    // IMPORTANT: Ensure pushcomments is called after review completes
+    // We'll poll for completion and then trigger pushcomments
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = await getSessionStatus(sessionId)
+        if (status.status === 'completed') {
+          clearInterval(pollInterval)
+          console.log(`Webhook: Review completed for PR #${pr.number}, posting comments...`)
+
+          // Call pushcomments after review completes
+          try {
+            await runCommand('pushcomments', `${pr.number}`)
+            console.log(`Webhook: Successfully posted comments for PR #${pr.number}`)
+          } catch (pushErr) {
+            console.error(`Webhook: Failed to post comments for PR #${pr.number}:`, pushErr)
+          }
+        } else if (status.status === 'error') {
+          clearInterval(pollInterval)
+          console.error(`Webhook: Review failed for PR #${pr.number}`)
+        }
+      } catch (pollErr) {
+        console.error(`Webhook: Error polling review status:`, pollErr)
+        clearInterval(pollInterval)
+      }
+    }, 5000) // Poll every 5 seconds
+
+    // Timeout after 10 minutes
+    setTimeout(() => {
+      clearInterval(pollInterval)
+      console.warn(`Webhook: Timeout waiting for review to complete for PR #${pr.number}`)
+    }, 600000)
   } catch (e) {
     console.error('Webhook: Failed to start review:', e)
   }
